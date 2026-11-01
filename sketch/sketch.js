@@ -83,6 +83,7 @@ function draw() {
     pushFrame();
   }
   drawPad();
+  renderMap();
 }
 
 // ---------- DMX frame ----------
@@ -199,10 +200,14 @@ function connect() {
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.type === 'config') {
-      const json = JSON.stringify(m);
+      // Map edits arrive as 'map' messages, so only the lights and models count here.
+      const json = JSON.stringify({ models: m.models, lights: m.lights });
       if (configJson && json !== configJson) location.reload(); // bridge restarted with a new config
-      else if (!configJson) { configJson = json; applyConfig(m); }
+      else if (!configJson) { configJson = json; applyConfig(m); initMap(m.map, m.canEdit); }
     }
+    if (m.type === 'map') mapFromBridge(m.map, m.id);
+    if (m.type === 'output') outputFromBridge(m);
+    if (m.type === 'error') mapNote(m.message);
     if (m.type === 'status') { sending = m.sending; updateStatus(m); }
   };
 }
@@ -241,6 +246,7 @@ function buildUi() {
       lab.dataset.i = i;
       lab.querySelector('input').onchange = (e) => {
         e.target.checked ? state.selected.add(i) : state.selected.delete(i);
+        renderMap(true);
       };
       // In solo mode, clicking a light's name solos it instead of ticking it.
       lab.onclick = (e) => {
@@ -257,7 +263,7 @@ function buildUi() {
           if (f.model !== key) return;
           btn.dataset.mode === 'all' ? state.selected.add(i) : state.selected.delete(i);
         });
-        document.querySelectorAll('input[data-i]').forEach((cb) => (cb.checked = state.selected.has(+cb.dataset.i)));
+        syncSelectedBoxes();
       };
     });
     el('groups').appendChild(set);
@@ -335,6 +341,15 @@ function buildUi() {
   el('raw-clear').onclick = () => { state.raw.clear(); renderRaw(); };
 }
 
+function toggleSelected(i) {
+  state.selected.has(i) ? state.selected.delete(i) : state.selected.add(i);
+  syncSelectedBoxes();
+}
+function syncSelectedBoxes() {
+  document.querySelectorAll('input[data-i]').forEach((cb) => (cb.checked = state.selected.has(+cb.dataset.i)));
+  renderMap(true);
+}
+
 function setSolo(i) {
   state.solo = i;
   el('solo').checked = i != null;
@@ -344,6 +359,7 @@ function setSolo(i) {
   });
   updateSoloId();
   updatePeek();
+  renderMap(true);
 }
 
 // Shows which light is soloed, and why it might not be visible in the room.

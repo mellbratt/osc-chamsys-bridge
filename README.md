@@ -87,6 +87,26 @@ The soloed light is only visible if its universe is ticked under "Universes to t
 
 **Warning: takeover is per whole universe.** While a universe is taken over, every channel the page does not set is 0, so the static lights on that universe go dark.
 
+### The light map
+
+The map at the top of the page shows the room from above, with every light that has been placed on it.
+
+- **Each light** shows its name, console address and a symbol for its model.
+  - While the page controls its universe, the light glows in its current brightness and colour, and an arrow shows where it points.
+  - Lights the page is controlling are ringed; the soloed light's ring flashes.
+- **Clicking a light** adds or removes it from the lights the controls affect, like ticking it in the list. In solo mode, clicking a light solos it.
+
+**Editing the map** is only possible on the bridge computer, at http://localhost:8080. Other devices see the map but can't change it. Tick **Edit map**, then:
+
+1. **Place lights:** the first light not yet on the map flashes. Find it in the room and click where it is on the map; the next one starts flashing. Click a placed light to place it again.
+2. **Rectangle** and **Line:** drag to draw the stage, walls, trusses and so on. Positions snap to 10 cm.
+3. **Move:** drag lights and shapes. Click one to pick it, then turn a light with ⟲/⟳ or type its facing, or press **Delete** to remove it.
+4. Set the room size in metres.
+
+Changes are saved to the config file straight away.
+
+**Setting a light's facing:** take control, solo the light, and tilt it so the beam leans away from the light. Turn the light on the map until its arrow points the same way as the beam in the room. The arrow needs the model's `panDegrees` and `tiltDegrees` in the config. If it turns the wrong way when you pan, check `invertPan` and `mounting` for that light.
+
 ## Room configuration
 
 Everything about a particular room is in the config file: the console, the light models, the lights and the map. The code has no room data in it. Start from `config.example.json`. The bridge checks the file at start and stops with a list of problems if something is wrong, e.g. two lights overlapping or an address past channel 512.
@@ -109,8 +129,9 @@ One entry per light model, keyed by a short name the lights refer to.
 | `label` | Name shown on the page. |
 | `source` | Where the layout comes from, e.g. the manual and its revision. Not used by the code. |
 | `channelCount` | Number of channels in the DMX mode used. |
-| `panDegrees`, `tiltDegrees` | Pan and tilt range. Not used yet; needed for the light map. |
-| `channels` | Which channel does what: `pan`, `panFine`, `tilt`, `tiltFine`, `dimmer`, `shutter`, `zoom`, `colorMacro`, `goboWheel`, `goboRot`, `focus`, `frost`, `control`. Leave out what the model doesn't have. |
+| `symbol` | Symbol on the map: `circle`, `triangle`, `square` or `diamond`. Optional. |
+| `panDegrees`, `tiltDegrees` | Pan and tilt range in degrees, from the spec sheet. The map draws direction arrows only for models that have both; `null` if unknown. |
+| `channels` | Which channel does what: `pan`, `panFine`, `tilt`, `tiltFine`, `dimmer`, `shutter`, `zoom`, `colorMacro`, `goboWheel`, `goboRot`, `focus`, `frost`, `control`, and `red`, `green`, `blue`, `white` for the map's colour. Leave out what the model doesn't have. |
 | `labels` | Names for other channels, shown under "Outgoing values". |
 | `shutterOpen` | Shutter channel value that opens the shutter. |
 | `zoomZeroIsWide` | `true` if zoom value 0 is the widest beam. |
@@ -140,13 +161,21 @@ One entry per moving light. The console's notation `2-106` means universe 2, add
 | `model` | Key of an entry in `models`. |
 | `universe`, `address` | Console universe and start address. |
 | `invertPan` | `true` if Pan Invert is ticked for the light on the console. |
-| `mounting` | `"hanging"` or `"standing"`. Not used yet; needed for the light map. |
+| `mounting` | `"hanging"` or `"standing"`. Used for the map's direction arrow. |
 
 Static lights (e.g. pars and fresnels) have no entry and stay dark on any universe the page has taken over.
 
 ### `map`
 
-Room shapes and light positions for the light map. Not used yet; leave it as `{ "shapes": [], "lights": {} }`.
+The light map, edited from the page (see [The light map](#the-light-map)); there's no need to edit it by hand. Sizes and positions are in metres, x to the right and y down the map.
+
+| Key | Meaning |
+|---|---|
+| `width`, `height` | Room size. Default 20 × 12. |
+| `shapes` | Rectangles `{ "type": "rect", "x", "y", "w", "h" }` and lines `{ "type": "line", "x1", "y1", "x2", "y2" }`. |
+| `lights` | Position of each light by name: `{ "x", "y", "facing" }`, facing in degrees clockwise from the top of the map. |
+
+When the map is saved, the bridge rewrites the config file. It keeps everything else in the file, including changes made by hand while it runs, but lays the file out in its own format.
 
 ## Troubleshooting
 

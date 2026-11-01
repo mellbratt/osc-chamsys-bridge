@@ -17,8 +17,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
+const os = require('os');
 const { WebSocketServer } = require('ws');
-const { loadConfig } = require('./config');
+const { loadConfig, saveMap } = require('./config');
 
 const CONFIG_PATH = path.resolve(process.argv[2] || path.join(__dirname, '..', 'config.json'));
 const config = loadConfig(CONFIG_PATH);
@@ -91,12 +92,31 @@ function status() {
     .map((u) => ({ desk: u, artnet: artnetUniverse(u) }));
   return JSON.stringify({ type: 'status', sending, packetsSent, consoleIp: CONSOLE_IP, universes, lastError });
 }
-function broadcastStatus() { wss.clients.forEach((c) => c.readyState === 1 && c.send(status())); }
+function broadcast(text) { wss.clients.forEach((c) => c.readyState === 1 && c.send(text)); }
+function broadcastStatus() { broadcast(status()); }
 setInterval(broadcastStatus, 1000);
 
-wss.on('connection', (ws) => {
-  console.log('Sketch connected');
-  ws.send(JSON.stringify({ type: 'config', models: config.models, lights: config.lights, map: config.map }));
+// What is being sent to the console, so every page's map can show it.
+let lastOutput = '';
+setInterval(() => {
+  const out = {};
+  if (sending) for (const [u, d] of frames) out[u] = Array.from(d);
+  const text = JSON.stringify({ type: 'output', sending, frames: out });
+  if (text !== lastOutput) { lastOutput = text; broadcast(text); }
+}, 100);
+
+// Only pages opened on this computer may edit the map.
+function isThisComputer(address) {
+  const a = String(address || '').replace(/^::ffff:/, '');
+  if (a === '127.0.0.1' || a === '::1') return true;
+  return Object.values(os.networkInterfaces()).flat().some((i) => i && i.address === a);
+}
+
+wss.on('connection', (ws, req) => {
+  const canEdit = isThisComputer(req.socket.remoteAddress);
+  console.log(`Sketch connected from ${req.socket.remoteAddress}${canEdit ? ' (this computer, can edit the map)' : ''}`);
+  ws.send(JSON.stringify({ type: 'config', models: config.models, lights: config.lights, map: config.map, canEdit }));
+  ws.send(lastOutput || JSON.stringify({ type: 'output', sending: false, frames: {} }));
   ws.send(status());
 
   ws.on('message', (raw) => {
@@ -120,6 +140,21 @@ wss.on('connection', (ws) => {
         console.log(`Universes now: ${after ? [...next.keys()].map((u) => `desk ${u} -> Art-Net ${artnetUniverse(u)}`).join(', ') : 'none'}`);
         broadcastStatus();
       }
+    } else if (msg.type === 'map') {
+      if (!canEdit) {
+        ws.send(JSON.stringify({ type: 'error', message: 'The map can only be edited on the bridge computer.' }));
+        return;
+      }
+      try {
+        config.map = saveMap(CONFIG_PATH, msg.map, config);
+      } catch (err) {
+        console.error('Map not saved:', err.message);
+        ws.send(JSON.stringify({ type: 'error', message: `Map not saved: ${err.message}` }));
+        // Send the saved map back so the page drops the refused change.
+        ws.send(JSON.stringify({ type: 'map', map: config.map, id: msg.id }));
+        return;
+      }
+      broadcast(JSON.stringify({ type: 'map', map: config.map, id: msg.id }));
     } else if (msg.type === 'send') {
       sending = !!msg.on;
       console.log(sending ? `Sending Art-Net to ${CONSOLE_IP}` : 'Stopped sending (desk takes back control)');

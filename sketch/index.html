@@ -9,6 +9,37 @@
 </head>
 <body>
   <main>
+    <section class="map-section">
+      <svg id="map" role="img" aria-label="Map of the lights in the room"><g id="map-content"></g></svg>
+      <p id="map-status" class="small"></p>
+      <p id="map-note" class="small"></p>
+      <div id="map-tools" hidden>
+        <label class="check"><input type="checkbox" id="map-edit"> Edit map</label>
+        <div id="map-edit-tools" hidden>
+          <div class="row wrap">
+            <label class="check"><input type="radio" name="map-tool" value="move" checked> Move</label>
+            <label class="check"><input type="radio" name="map-tool" value="rect"> Rectangle</label>
+            <label class="check"><input type="radio" name="map-tool" value="line"> Line</label>
+            <label class="check"><input type="radio" name="map-tool" value="place"> Place lights</label>
+          </div>
+          <p id="map-place-hint" class="small" hidden>The flashing light is shown under "Solo". Find it in the room and click where it is on the map; the next one starts flashing. Click a light on the map to re-place it.</p>
+          <div class="row wrap">
+            <label class="inline">Room <input type="number" id="map-width" min="1" max="1000" step="0.5"> ×
+              <input type="number" id="map-height" min="1" max="1000" step="0.5"> m</label>
+          </div>
+          <div id="map-picked" class="row wrap" hidden>
+            <strong id="map-picked-name"></strong>
+            <span id="map-light-tools" class="row">
+              <button class="quiet" id="map-rotate-left" aria-label="Turn 15° anticlockwise">⟲ 15°</button>
+              <label class="inline">Facing <input type="number" id="map-facing" min="0" max="359" step="5">°</label>
+              <button class="quiet" id="map-rotate-right" aria-label="Turn 15° clockwise">⟳ 15°</button>
+            </span>
+            <button class="quiet" id="map-delete">Delete</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="stage">
       <div id="pad-holder"></div>
       <p class="hint">Drag to aim. Left–right is pan, up–down is tilt.</p>
@@ -104,6 +135,7 @@
       </details>
     </section>
   </main>
+  <script src="map.js"></script>
   <script src="sketch.js"></script>
 </body>
 </html>

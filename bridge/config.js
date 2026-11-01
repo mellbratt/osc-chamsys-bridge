@@ -6,6 +6,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const SYMBOLS = ['circle', 'square', 'triangle', 'diamond'];
+
 function loadConfig(file) {
   if (!fs.existsSync(file)) {
     const example = path.join(__dirname, '..', 'config.example.json');
@@ -19,10 +21,98 @@ function loadConfig(file) {
   }
   const problems = check(cfg);
   if (problems.length) fail(`Problems in ${file}:\n- ${problems.join('\n- ')}`);
-  cfg.map = cfg.map || {};
-  cfg.map.shapes = cfg.map.shapes || [];
-  cfg.map.lights = cfg.map.lights || {};
+  cfg.map = normalizeMap(cfg.map);
+  const names = new Set(cfg.lights.map((l) => l.name));
+  for (const name of Object.keys(cfg.map.lights)) {
+    if (!names.has(name)) console.warn(`Note: the map has a position for "${name}", which isn't in lights. It is ignored.`);
+  }
   return cfg;
+}
+
+// ---------- Map ----------
+// The map is a top-down plan in metres: x to the right, y down the page.
+// Light facing is in degrees clockwise from the top of the map.
+
+const DEFAULT_SIZE = { width: 20, height: 12 };
+
+function normalizeMap(map) {
+  map = map || {};
+  return {
+    width: map.width ?? DEFAULT_SIZE.width,
+    height: map.height ?? DEFAULT_SIZE.height,
+    shapes: map.shapes || [],
+    lights: map.lights || {},
+  };
+}
+
+function checkMap(map) {
+  const p = [];
+  const num = (n) => typeof n === 'number' && Number.isFinite(n);
+  if (!map || typeof map !== 'object') return ['map must be an object.'];
+  for (const key of ['width', 'height']) {
+    if (map[key] != null && !(num(map[key]) && map[key] > 0 && map[key] <= 1000)) p.push(`map.${key} must be a size in metres, from 0 to 1000.`);
+  }
+  if (map.shapes != null && !Array.isArray(map.shapes)) p.push('map.shapes must be a list.');
+  for (const [i, sh] of (Array.isArray(map.shapes) ? map.shapes : []).entries()) {
+    const keys = sh && sh.type === 'rect' ? ['x', 'y', 'w', 'h'] : sh && sh.type === 'line' ? ['x1', 'y1', 'x2', 'y2'] : null;
+    if (!keys) { p.push(`map.shapes[${i}].type must be "rect" or "line".`); continue; }
+    for (const k of keys) if (!num(sh[k])) p.push(`map.shapes[${i}].${k} must be a number.`);
+  }
+  if (map.lights != null && (typeof map.lights !== 'object' || Array.isArray(map.lights))) p.push('map.lights must be an object.');
+  for (const [name, pos] of Object.entries(map.lights || {})) {
+    if (!pos || !num(pos.x) || !num(pos.y) || !num(pos.facing ?? 0)) p.push(`map.lights["${name}"] needs numbers x, y and facing.`);
+  }
+  return p;
+}
+
+// Saves a new map into the config file and returns it. Re-reads the file so
+// hand edits made while the bridge runs are kept; only "map" is replaced.
+function saveMap(file, map, current) {
+  const problems = checkMap(map);
+  if (problems.length) throw new Error(problems.join(' '));
+  map = normalizeMap(map);
+  // Keep only what the map needs, and only for lights that exist.
+  const names = new Set(current.lights.map((l) => l.name));
+  map = {
+    width: map.width,
+    height: map.height,
+    shapes: map.shapes.map((sh) => (sh.type === 'rect'
+      ? { type: 'rect', x: sh.x, y: sh.y, w: sh.w, h: sh.h }
+      : { type: 'line', x1: sh.x1, y1: sh.y1, x2: sh.x2, y2: sh.y2 })),
+    lights: Object.fromEntries(Object.entries(map.lights)
+      .filter(([name]) => names.has(name))
+      .map(([name, pos]) => [name, { x: pos.x, y: pos.y, facing: pos.facing ?? 0 }])),
+  };
+  let onDisk;
+  try {
+    onDisk = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    throw new Error(`could not read ${file} to save the map: ${err.message}`);
+  }
+  onDisk.map = map;
+  const tmp = `${file}.saving`;
+  fs.writeFileSync(tmp, formatJson(onDisk) + '\n');
+  fs.renameSync(tmp, file);
+  return map;
+}
+
+// JSON with small objects and lists on one line, so the file stays easy to
+// read and edit by hand (e.g. one line per light).
+function formatJson(value, indent = '') {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  const isArray = Array.isArray(value);
+  const entries = isArray ? value.map((v) => [null, v]) : Object.entries(value);
+  if (!entries.length) return isArray ? '[]' : '{}';
+  const flat = entries.every(([, v]) => v === null || typeof v !== 'object');
+  const item = ([k, v], ind) => (k === null ? '' : `${JSON.stringify(k)}: `) + formatJson(v, ind);
+  if (flat) {
+    const line = entries.map((e) => item(e, '')).join(', ');
+    const oneLine = isArray ? `[${line}]` : `{ ${line} }`;
+    if (indent.length + oneLine.length <= 120) return oneLine;
+  }
+  const inner = indent + '  ';
+  const body = entries.map((e) => inner + item(e, inner)).join(',\n');
+  return isArray ? `[\n${body}\n${indent}]` : `{\n${body}\n${indent}}`;
 }
 
 function check(cfg) {
@@ -57,6 +147,10 @@ function check(cfg) {
     const ch = m.channels || {};
     if (ch.goboWheel != null && !m.gobo) p.push(`${where} has a goboWheel channel but no "gobo" settings.`);
     if (ch.goboRot != null && !m.goboRotation) p.push(`${where} has a goboRot channel but no "goboRotation" settings.`);
+    for (const k of ['panDegrees', 'tiltDegrees']) {
+      if (m[k] != null && !(typeof m[k] === 'number' && m[k] > 0 && m[k] <= 720)) p.push(`${where}.${k} must be a number of degrees, or null if unknown.`);
+    }
+    if (m.symbol != null && !SYMBOLS.includes(m.symbol)) p.push(`${where}.symbol must be one of ${SYMBOLS.join(', ')}.`);
   }
 
   const lights = cfg.lights || [];
@@ -87,6 +181,7 @@ function check(cfg) {
       used.set(key, l.name);
     }
   }
+  if (cfg.map != null) p.push(...checkMap(cfg.map));
   return p;
 }
 
@@ -95,4 +190,4 @@ function fail(msg) {
   process.exit(1);
 }
 
-module.exports = { loadConfig };
+module.exports = { loadConfig, saveMap, formatJson };

@@ -49,3 +49,29 @@ select { font: inherit; padding: 0.25rem; grid-column: 2 / 4; }
 body.solo-mode .group input[type=checkbox] { display: none; }
 body.solo-mode .group label { cursor: pointer; padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid transparent; }
 body.solo-mode .group label.solo { border-color: var(--tungsten); color: var(--tungsten); font-weight: 600; }
+
+/* Light map */
+.map-section { grid-column: 1 / -1; width: 100%; max-width: 900px; justify-self: center; }
+#map { display: block; width: 100%; height: auto; max-height: 70vh; background: #161b25; border-radius: 6px; touch-action: none; user-select: none; }
+.map-room { fill: #1b2130; stroke: #3a4456; stroke-width: 0.04; }
+.map-grid { stroke: #262e3d; stroke-width: 0.02; }
+.map-shape { fill: rgba(154, 163, 179, 0.12); stroke: var(--dim); stroke-width: 0.06; }
+line.map-shape { stroke-width: 0.12; stroke-linecap: round; }
+.map-shape.picked { stroke: var(--tungsten); }
+.map-shape.drawing { stroke: var(--tungsten); stroke-dasharray: 0.2 0.15; }
+.map-light { cursor: pointer; }
+.map-symbol { fill: var(--panel); stroke: var(--ink); stroke-width: 0.05; }
+.map-ring { fill: none; stroke: var(--tungsten); stroke-width: 0.07; }
+.map-light.picked .map-ring { stroke-dasharray: 0.15 0.1; }
+.map-light.soloed .map-ring { stroke-width: 0.12; animation: solo-pulse 0.5s steps(2) infinite; }
+@keyframes solo-pulse { 50% { stroke-opacity: 0.2; } }
+.map-aim { stroke: var(--tungsten); stroke-width: 0.07; stroke-linecap: round; }
+.map-facing { stroke: var(--dim); stroke-width: 0.05; }
+.map-name { font-size: 0.3px; fill: var(--ink); text-anchor: middle; pointer-events: none; }
+.map-addr { font-size: 0.24px; fill: var(--dim); text-anchor: middle; pointer-events: none; }
+#map.editing[data-tool=rect], #map.editing[data-tool=line], #map.editing[data-tool=place] { cursor: crosshair; }
+#map-tools, #map-edit-tools { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+#map-tools[hidden], #map-edit-tools[hidden], #map-picked[hidden], #map-light-tools[hidden] { display: none; }
+.row.wrap { flex-wrap: wrap; align-items: center; }
+.inline { display: inline-flex; gap: 0.35rem; align-items: center; }
+.inline input[type=number] { width: 4.5rem; font: inherit; padding: 0.2rem; }
