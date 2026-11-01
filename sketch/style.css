@@ -75,3 +75,11 @@ line.map-shape { stroke-width: 0.12; stroke-linecap: round; }
 .row.wrap { flex-wrap: wrap; align-items: center; }
 .inline { display: inline-flex; gap: 0.35rem; align-items: center; }
 .inline input[type=number] { width: 4.5rem; font: inherit; padding: 0.2rem; }
+
+/* Lights someone else is controlling */
+.group label.busy { color: var(--dim); }
+.group label.busy input { cursor: not-allowed; }
+.owner { color: var(--tungsten); }
+.map-light.busy .map-symbol { stroke: var(--tungsten); stroke-dasharray: 0.08 0.06; }
+.note:empty { display: none; }
+.note { color: var(--tungsten); }

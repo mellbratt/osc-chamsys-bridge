@@ -51,16 +51,12 @@
         <span id="out"></span>
       </div>
 
-      <fieldset>
-        <legend>Universes to take over</legend>
-        <div id="universes" class="row"></div>
-        <p class="small">Each ticked universe goes fully to this page: its static lights go dark. Unticked ones stay with the console.</p>
-      </fieldset>
-
       <div class="row">
-        <button id="toggle-send">Take control</button>
+        <button id="toggle-send" hidden>Release to console</button>
         <button id="blackout" class="quiet">Blackout</button>
       </div>
+      <p class="small">Tick lights to control them. A light belongs to whoever ticks it first, until they untick it or close the page; lights nobody has ticked are dark.</p>
+      <p id="control-note" class="small note" role="status"></p>
 
       <fieldset id="panel-solo">
         <legend>Solo</legend>

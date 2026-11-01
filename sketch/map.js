@@ -99,9 +99,13 @@ function setTool(tool) {
   document.querySelectorAll('input[name=map-tool]').forEach((r) => (r.checked = r.value === tool));
   mapView.picked = null;
   if (tool === 'place') {
-    // Solo the first light not yet on the map, or the first light if all are placed.
-    const next = displayOrder.find((i) => !mapView.map.lights[FIXTURES[i].name]);
-    setSolo(next ?? displayOrder[0]);
+    // Solo the first light not yet on the map, or the first light if all are
+    // placed. Lights someone else is controlling are skipped.
+    const usable = displayOrder.filter((i) => !otherOwner(i));
+    const next = usable.find((i) => !mapView.map.lights[FIXTURES[i].name]);
+    const start = next ?? usable[0];
+    if (start != null) setSolo(start);
+    else mapNote('Every light is being controlled by someone else, so none can flash for placing.');
   } else if (was === 'place') {
     setSolo(null);
   }
@@ -117,9 +121,12 @@ function placeSoloedLight(pt) {
   // Move on to the next light that isn't on the map yet.
   const at = displayOrder.indexOf(state.solo);
   const rest = [...displayOrder.slice(at + 1), ...displayOrder.slice(0, at)];
-  const next = rest.find((i) => !mapView.map.lights[FIXTURES[i].name]);
+  const next = rest.find((i) => !mapView.map.lights[FIXTURES[i].name] && !otherOwner(i));
   if (next != null) setSolo(next);
-  else { setTool('move'); mapNote('Every light is on the map. Turn each one to match the way it faces.'); }
+  else if (FIXTURES.some((f) => !mapView.map.lights[f.name])) {
+    setTool('move');
+    mapNote('The lights not on the map yet are being controlled by someone else. Place them once they are free.');
+  } else { setTool('move'); mapNote('Every light is on the map. Turn each one to match the way it faces.'); }
 }
 
 function pickedLightPos() {
@@ -310,8 +317,10 @@ function renderMap(now) {
     const soloed = state.solo === i;
     const selected = state.solo == null && state.selected.has(i);
     const picked = mapView.picked && mapView.picked.kind === 'light' && mapView.picked.name === f.name;
-    const cls = ['map-light', soloed && 'soloed', selected && 'selected', picked && 'picked'].filter(Boolean).join(' ');
+    const who = otherOwner(i);
+    const cls = ['map-light', soloed && 'soloed', selected && 'selected', picked && 'picked', who && 'busy'].filter(Boolean).join(' ');
     const lg = add(g, 'g', { class: cls, 'data-light': f.name, transform: `translate(${pos.x} ${pos.y})` });
+    add(lg, 'title', {}).textContent = who ? `${f.name}: being controlled by ${who}` : f.name;
 
     if (live && live.level > 0) {
       const [r, gg, b] = live.rgb;

@@ -7,17 +7,16 @@ Control the moving heads on a ChamSys QuickQ lighting console from code running 
 This first version has two parts:
 
 - **A Node.js bridge** (`bridge/bridge.js`). It sends Art-Net to the console and serves a control webpage.
-- **A p5.js control page** (`sketch/`). It runs in the browser and sends its DMX values to the bridge over a WebSocket.
+- **A p5.js control page** (`sketch/`). It runs in the browser and sends what its user does (take these lights, set the dimmer, solo this one) to the bridge over a WebSocket. Several people can use it at once.
 
 ```
 browser (p5.js page) --WebSocket--> bridge.js --Art-Net (UDP 6454)--> ChamSys QuickQ --DMX--> fixtures
 ```
 
-- **The page** builds one 512-channel DMX frame per console universe and sends the frames to the bridge.
-  - Controls: pan/tilt pad, dimmer, zoom, Jet Wash 7 colour macro, Jet Profile300LT gobo/rotation/focus/frost, and a channel finder for setting any single channel.
-- **The bridge** wraps each frame in an ArtDmx packet and sends it to the console 30 times per second, one packet per universe.
+- **The page** has a light map, a pan/tilt pad, dimmer, zoom, colour macro, gobo/rotation/focus/frost, solo mode for finding lights, and a channel finder for setting any single channel.
+- **The bridge** keeps track of who controls which light, works out the DMX values for every universe that has lights, wraps them in ArtDmx packets and sends them to the console 30 times per second.
 - **The console** uses hot takeover: when it receives Art-Net on a universe that allows external control, it stops outputting its own values and passes the incoming ones to its DMX outputs.
-  - When the bridge stops sending, the console takes the universe back after a few seconds.
+  - When the bridge stops sending (**Release to console**, or the bridge is stopped), the console takes the universe back after a few seconds.
 
 Tested against the console: Art-Net takeover of universe 1. Not yet tested against the console: the Jet Wash 7 and Profile300LT channel layouts in `config.example.json`, which are taken from the Prolights user manuals.
 
@@ -32,10 +31,10 @@ The goal is a general bridge from **OSC to Art-Net**, used by **several clients 
 
 | | Now | Intended |
 |---|---|---|
-| Input protocol | JSON frames over WebSocket | OSC over UDP (plus a WebSocket path for browsers) |
-| Message level | Raw 512-channel frames | Per-fixture, per-attribute messages |
+| Input protocol | JSON messages over WebSocket | OSC over UDP (plus a WebSocket path for browsers) |
+| Message level | Per-light settings, e.g. "take Wash 26", "dimmer 200 for my lights" | Per-fixture, per-attribute messages |
 | Fixture/patch knowledge | In the room's config file, read by the bridge and sent to the page | Same, and used by the bridge to resolve OSC messages |
-| Multiple clients | Accepted, but the last frame received replaces the previous one | Merged per channel, rules to be decided (e.g. highest value or most recent change) |
+| Multiple clients | A light belongs to whoever takes it first (see [Several people at once](#several-people-at-once)) | Same rules for OSC senders |
 | Network | The bridge listens on all interfaces, so other devices on the LAN can open the page | Same, with documented OSC port |
 
 ## Requirements
@@ -72,28 +71,41 @@ Then open http://localhost:8080.
 
 ## Using the control page
 
-1. Tick which console universes the page takes over.
-2. Select fixtures, press **Take control**, raise the dimmer.
-3. Press **Release to desk** when finished.
+While the bridge runs, it controls every console universe that has lights in the config. Lights nobody is controlling are dark and parked at centre.
+
+1. Tick the lights you want to control, in the list or by clicking them on the map.
+2. Raise the dimmer and set the other controls. They apply to all your ticked lights.
+3. Untick lights, or close the page, when finished: they go dark again.
+
+**Release to console** (on the bridge computer only) hands every universe back to the console, e.g. to run a show from it. **Take back from console** returns control to the bridge.
+
+**Warning: control is per whole universe.** While the bridge runs, every channel it doesn't set is 0, so static lights not in the config go dark.
+
+### Several people at once
+
+Anyone on the network can open the page, e.g. on a phone, at `http://<bridge-computer-ip>:8080`.
+
+- A page that has just opened only watches. It changes nothing until its user ticks a light or clicks one on the map.
+- **A light belongs to whoever takes it first.** Others see it greyed out in the list, marked on the map, with the address of the device controlling it, and can't change it.
+- A light is freed when its owner unticks it or closes the page, or after **10 seconds** without hearing from that page (e.g. a phone that locks). A freed light goes dark and parks at centre.
+- A page that reconnects (a phone waking up) asks for its lights again; any that someone else has taken meanwhile stay with them.
+- **Blackout** only affects your own lights.
+- Editing the map and **Release to console** work only on the bridge computer.
 
 ### Finding a light in the room (solo mode)
 
-1. Tick **Solo one light** under "Solo". The first ticked light starts flashing white about twice a second, and every other moving light goes dark and parks at centre.
-2. Click a light's name in the list, or press ↑ and ↓, to solo another one. The page shows the soloed light's name and console address, e.g. "Wash 26, 1-061".
+1. Tick **Solo one light** under "Solo". Your first ticked light (or the first free light) starts flashing white about twice a second, and your other lights go dark. Other people's lights are left alone.
+2. Click a light's name in the list, or press ↑ and ↓, to solo another one. Lights someone else is controlling are skipped. The page shows the soloed light's name and console address, e.g. "Wash 26, 1-061".
 3. Aim it with the pan/tilt pad to see where it points.
 4. Untick **Solo** (or press **Blackout**) to go back to the lights you had ticked.
-
-The soloed light is only visible if its universe is ticked under "Universes to take over"; the page says so if it isn't.
-
-**Warning: takeover is per whole universe.** While a universe is taken over, every channel the page does not set is 0, so the static lights on that universe go dark.
 
 ### The light map
 
 The map at the top of the page shows the room from above, with every light that has been placed on it.
 
 - **Each light** shows its name, console address and a symbol for its model.
-  - While the page controls its universe, the light glows in its current brightness and colour, and an arrow shows where it points.
-  - Lights the page is controlling are ringed; the soloed light's ring flashes.
+  - While the bridge controls the lights, each light glows in its current brightness and colour, and an arrow shows where it points.
+  - Your lights are ringed, and the soloed light's ring flashes. Lights someone else is controlling have a dashed outline; hover over one to see who.
 - **Clicking a light** adds or removes it from the lights the controls affect, like ticking it in the list. In solo mode, clicking a light solos it.
 
 **Editing the map** is only possible on the bridge computer, at http://localhost:8080. Other devices see the map but can't change it. Tick **Edit map**, then:
@@ -105,7 +117,7 @@ The map at the top of the page shows the room from above, with every light that 
 
 Changes are saved to the config file straight away.
 
-**Setting a light's facing:** take control, solo the light, and tilt it so the beam leans away from the light. Turn the light on the map until its arrow points the same way as the beam in the room. The arrow needs the model's `panDegrees` and `tiltDegrees` in the config. If it turns the wrong way when you pan, check `invertPan` and `mounting` for that light.
+**Setting a light's facing:** solo the light, and tilt it so the beam leans away from the light. Turn the light on the map until its arrow points the same way as the beam in the room. The arrow needs the model's `panDegrees` and `tiltDegrees` in the config. If it turns the wrong way when you pan, check `invertPan` and `mounting` for that light.
 
 ## Room configuration
 
