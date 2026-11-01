@@ -1,0 +1,133 @@
+{
+  "console": {
+    "ip": "10.0.0.10",
+    "artnetUniverseForUniverse1": 0
+  },
+  "models": {
+    "wash7": {
+      "label": "Jet Wash 7",
+      "source": "Prolights Jet Wash7 user manual, rev. 04/22, Standard mode",
+      "channelCount": 23,
+      "panDegrees": null,
+      "tiltDegrees": null,
+      "channels": {
+        "pan": 1,
+        "panFine": 2,
+        "tilt": 3,
+        "tiltFine": 4,
+        "dimmer": 5,
+        "shutter": 7,
+        "colorMacro": 19,
+        "zoom": 21,
+        "control": 23
+      },
+      "labels": {
+        "9": "tint",
+        "10": "crossfade",
+        "11": "red",
+        "13": "green",
+        "15": "blue",
+        "17": "white"
+      },
+      "shutterOpen": 255,
+      "zoomZeroIsWide": true,
+      "defaults": {
+        "1": 128,
+        "2": 128,
+        "3": 128,
+        "4": 128,
+        "9": 128,
+        "10": 255,
+        "11": 255,
+        "12": 255,
+        "13": 255,
+        "14": 255,
+        "15": 255,
+        "16": 255,
+        "17": 255,
+        "18": 255,
+        "21": 128,
+        "22": 128
+      }
+    },
+    "profile300": {
+      "label": "Jet Profile300LT",
+      "source": "Prolights Jet Profile300LT user manual, rev. 25/Nov/25, Standard mode",
+      "channelCount": 38,
+      "panDegrees": null,
+      "tiltDegrees": null,
+      "channels": {
+        "pan": 1,
+        "panFine": 2,
+        "tilt": 3,
+        "tiltFine": 4,
+        "dimmer": 5,
+        "shutter": 7,
+        "goboWheel": 14,
+        "goboRot": 15,
+        "frost": 21,
+        "zoom": 22,
+        "focus": 24,
+        "control": 38
+      },
+      "labels": {},
+      "shutterOpen": 255,
+      "zoomZeroIsWide": false,
+      "gobo": {
+        "slots": 7,
+        "openValue": 0,
+        "indexFirst": 12,
+        "spinFirst": 68,
+        "slotWidth": 8
+      },
+      "goboRotation": {
+        "indexRange": [
+          0,
+          255
+        ],
+        "stop": 128,
+        "forwardRange": [
+          127,
+          1
+        ],
+        "backwardRange": [
+          129,
+          255
+        ]
+      },
+      "defaults": {
+        "1": 128,
+        "3": 128,
+        "22": 128,
+        "24": 128,
+        "29": 128,
+        "31": 128,
+        "33": 128,
+        "35": 128,
+        "36": 128
+      }
+    }
+  },
+  "lights": [
+    {
+      "name": "Wash 1",
+      "model": "wash7",
+      "universe": 1,
+      "address": 1,
+      "invertPan": false,
+      "mounting": "hanging"
+    },
+    {
+      "name": "Profile 1",
+      "model": "profile300",
+      "universe": 1,
+      "address": 24,
+      "invertPan": false,
+      "mounting": "hanging"
+    }
+  ],
+  "map": {
+    "shapes": [],
+    "lights": {}
+  }
+}

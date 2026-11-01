@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>QuickQ test rig</title>
+  <title>Light control</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -23,7 +23,7 @@
       <fieldset>
         <legend>Universes to take over</legend>
         <div id="universes" class="row"></div>
-        <p class="small">Each ticked universe goes fully to the sketch: its static lights go dark. Unticked ones stay with the desk.</p>
+        <p class="small">Each ticked universe goes fully to this page: its static lights go dark. Unticked ones stay with the console.</p>
       </fieldset>
 
       <div class="row">
@@ -31,16 +31,7 @@
         <button id="blackout" class="quiet">Blackout</button>
       </div>
 
-      <fieldset>
-        <legend>Jet Wash 7</legend>
-        <div id="group-wash7" class="group"></div>
-        <div class="row"><button class="quiet" data-select="wash7:all">All</button><button class="quiet" data-select="wash7:none">None</button></div>
-      </fieldset>
-      <fieldset>
-        <legend>Jet Profile300LT (gobos)</legend>
-        <div id="group-profile300" class="group"></div>
-        <div class="row"><button class="quiet" data-select="profile300:all">All</button><button class="quiet" data-select="profile300:none">None</button></div>
-      </fieldset>
+      <div id="groups" class="controls"></div>
 
       <label class="slider">Dimmer
         <input type="range" id="dimmer" min="0" max="255" value="0"><output id="dimmer-out">0</output>
@@ -50,23 +41,19 @@
       </label>
       <label class="check"><input type="checkbox" id="sweep"> Sweep in a slow circle</label>
 
-      <fieldset>
-        <legend>Wash 7 colour</legend>
+      <fieldset id="panel-color">
+        <legend>Colour macro</legend>
         <label class="slider">Macro
           <input type="range" id="color" min="0" max="255" value="0"><output id="color-out">0</output>
         </label>
-        <p class="small">0 = open white. Higher values step through gel colours.</p>
+        <p class="small">Steps through the light's built-in colours. The manual lists which value gives which colour.</p>
       </fieldset>
 
-      <fieldset>
-        <legend>Profile gobos</legend>
+      <fieldset id="panel-gobo">
+        <legend>Gobos, focus and frost</legend>
         <label class="slider">Gobo
           <select id="gobo">
             <option value="0">Open (no gobo)</option>
-            <option value="1">Gobo 1</option><option value="2">Gobo 2</option>
-            <option value="3">Gobo 3</option><option value="4">Gobo 4</option>
-            <option value="5">Gobo 5</option><option value="6">Gobo 6</option>
-            <option value="7">Gobo 7</option>
           </select>
         </label>
         <div class="row">
@@ -87,9 +74,9 @@
 
       <fieldset>
         <legend>Channel finder</legend>
-        <p class="small">Poke any single DMX channel to find out what it does. Overrides everything else. Starts at 1-065, the dimmer of Wash 26.</p>
+        <p class="small">Poke any single DMX channel to find out what it does. Overrides everything else. Starts at the dimmer of the first light.</p>
         <label class="slider">Universe
-          <select id="raw-uni"><option value="1">1</option><option value="2">2</option></select>
+          <select id="raw-uni"></select>
         </label>
         <label class="slider">Channel
           <input type="number" id="raw-ch" min="1" max="512" value="65">

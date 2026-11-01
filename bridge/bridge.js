@@ -1,12 +1,15 @@
 // p5 -> WebSocket -> this script -> Art-Net (UDP 6454) -> QuickQ
 //
-// Usage:  node bridge.js <console-ip> [artnet-universe-of-desk-universe-1]
-//   e.g.  node bridge.js 10.0.0.10 0
-//         node bridge.js 10.255.255.255 0    (broadcast, if you don't know the IP)
+// Usage:  node bridge.js [config-file]
 //
-// The sketch sends one 512-channel frame per DESK universe (1, 2, ...).
-// The second argument is the Art-Net universe that desk universe 1 maps to
-// (usually 0). Desk universe 2 then goes to that + 1, and so on.
+// The room setup (console IP, light models, lights, map) is read from a JSON
+// config file, by default config.json in the repo root. Copy
+// config.example.json to make one. See the README.
+//
+// The page sends one 512-channel frame per console universe (1, 2, ...).
+// console.artnetUniverseForUniverse1 in the config is the Art-Net universe
+// that console universe 1 maps to (usually 0). Console universe 2 then goes
+// to that + 1, and so on.
 //
 // Then open http://localhost:8080 in the browser.
 
@@ -15,9 +18,13 @@ const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
 const { WebSocketServer } = require('ws');
+const { loadConfig } = require('./config');
 
-const CONSOLE_IP = process.argv[2] || '255.255.255.255';
-const BASE_UNIVERSE = parseInt(process.argv[3] || '0', 10);
+const CONFIG_PATH = path.resolve(process.argv[2] || path.join(__dirname, '..', 'config.json'));
+const config = loadConfig(CONFIG_PATH);
+
+const CONSOLE_IP = config.console.ip;
+const BASE_UNIVERSE = config.console.artnetUniverseForUniverse1;
 const HTTP_PORT = 8080;
 const ARTNET_PORT = 6454;
 const SEND_HZ = 30; // Art-Net should be refreshed continuously, not just on change
@@ -89,6 +96,7 @@ setInterval(broadcastStatus, 1000);
 
 wss.on('connection', (ws) => {
   console.log('Sketch connected');
+  ws.send(JSON.stringify({ type: 'config', models: config.models, lights: config.lights, map: config.map }));
   ws.send(status());
 
   ws.on('message', (raw) => {
@@ -131,6 +139,7 @@ wss.on('connection', (ws) => {
 
 server.listen(HTTP_PORT, () => {
   console.log(`Bridge ready. Open http://localhost:${HTTP_PORT}`);
+  console.log(`Config: ${CONFIG_PATH} (${config.lights.length} lights)`);
   console.log(`Art-Net target: ${CONSOLE_IP}. Desk universe 1 -> Art-Net ${artnetUniverse(1)}, 2 -> ${artnetUniverse(2)}`);
   console.log('Not sending until you press "Take control"');
 });

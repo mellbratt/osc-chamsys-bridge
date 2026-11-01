@@ -1,90 +1,36 @@
-// =====================================================================
-//  RIG CONFIG: moving heads from the QuickQ patch
-// =====================================================================
-// Desk address "2-106" = desk universe 2, address 106. Start the bridge with
-// the Art-Net universe the desk shows for universe 1 (usually 0); desk
-// universe 2 then goes out as the next Art-Net universe.
+// The room setup (light models, lights, map) comes from the bridge, which
+// reads it from the config file. Nothing about a particular room is in here.
+// Channel numbers in the config are 1-based, as in the manuals; this file
+// works with offsets from a light's start address (0 = 1st channel).
 
-// Channel layouts as offsets from the fixture's start address (0 = 1st channel).
-// Sources: Prolights user manuals, Jet Wash7 (rev 04/22) and
-// Jet Profile300LT (rev 11/25), DMX mode "Standard".
-const TYPES = {
-  wash7: {
-    label: 'Jet Wash 7',
-    ch: {
-      pan: 0, panFine: 1, tilt: 2, tiltFine: 3, dimmer: 4, shutter: 6,
-      colorMacro: 18, zoom: 20,
-      control: 22, // fixture settings/resets: never written by this sketch
-    },
-    names: { 8: 'tint', 9: 'crossfade', 10: 'red', 12: 'green', 14: 'blue', 16: 'white' },
-    zoomZeroIsWide: true, // ch 21: wide -> narrow
-    shutterOpen: 255,     // ch 7: 0-1 closed, 252-255 open
-    // Manual defaults for channels the sketch doesn't drive (offset: value)
-    defaults: {
-      0: 128, 1: 128, 2: 128, 3: 128,  // pan/tilt centre
-      8: 128,                          // tint balanced
-      9: 255,                          // crossfade -> RGBW
-      10: 255, 11: 255, 12: 255, 13: 255, 14: 255, 15: 255, 16: 255, 17: 255, // RGBW full = white
-      20: 128, 21: 128,                // zoom middle
-    },
-  },
+let MODELS = {};    // model key -> layout, as offsets
+let FIXTURES = [];  // lights from the config
+let UNIVERSES = []; // console universes that have lights
+const takeover = new Set(); // universes sent when you press "Take control"
+let configJson = null;
 
-  profile300: {
-    label: 'Jet Profile300LT',
-    ch: {
-      pan: 0, panFine: 1, tilt: 2, tiltFine: 3, dimmer: 4, shutter: 6,
-      goboWheel: 13, goboRot: 14, frost: 20, zoom: 21, focus: 23,
-      control: 37, // fixture settings/resets: never written by this sketch
-    },
-    names: {},
-    zoomZeroIsWide: false, // ch 22: min -> max beam angle
-    shutterOpen: 255,      // ch 7: 252-255 open (126-127 closed)
-    defaults: {
-      0: 128, 2: 128,                  // pan/tilt centre
-      21: 128, 23: 128,                // zoom, focus middle
-      28: 128, 30: 128, 32: 128, 34: 128, // blade swivels at 0°
-      35: 128,                         // frame rotation 0°
-    },
-  },
-};
+function toOffsets(byChannel) {
+  const out = {};
+  for (const [n, v] of Object.entries(byChannel || {})) out[Number(n) - 1] = v;
+  return out;
+}
 
-const FIXTURES = [
-  // Desk universe 1
-  { name: 'Wash 26', type: 'wash7', universe: 1, address: 61 },
-  { name: 'Wash 27', type: 'wash7', universe: 1, address: 122 },
-  { name: 'Wash 28', type: 'wash7', universe: 1, address: 183 },
-  { name: 'Wash 29', type: 'wash7', universe: 1, address: 215 },
-  { name: 'Wash 30', type: 'wash7', universe: 1, address: 277 },
-  { name: 'Wash 31', type: 'wash7', universe: 1, address: 338 },
-  { name: 'Wash 32', type: 'wash7', universe: 1, address: 371 },
-  { name: 'Profile 17', type: 'profile300', universe: 1, address: 239 },
-  { name: 'Profile 18', type: 'profile300', universe: 1, address: 300 },
-  { name: 'Profile 19', type: 'profile300', universe: 1, address: 394 },
-  // Desk universe 2
-  { name: 'Profile 20', type: 'profile300', universe: 2, address: 1 },
-  { name: 'Profile 21', type: 'profile300', universe: 2, address: 106 },
-  { name: 'Profile 22', type: 'profile300', universe: 2, address: 167 },
-  { name: 'Profile 23', type: 'profile300', universe: 2, address: 259 },
-  { name: 'Profile 24', type: 'profile300', universe: 2, address: 297 },
-  { name: 'Profile 25', type: 'profile300', universe: 2, address: 335 },
-  { name: 'Wash 37', type: 'wash7', universe: 2, address: 205 },
-  { name: 'Wash 38', type: 'wash7', universe: 2, address: 393 },
-  { name: 'Wash 39', type: 'wash7', universe: 2, address: 416 },
-  { name: 'Wash 40', type: 'wash7', universe: 2, address: 439 },
-  { name: 'Wash 41', type: 'wash7', universe: 2, address: 472 },
-];
-// Not in the patch photos, so not included: fixtures 11-16 and Washes 33-36.
-// Add them here once you know their universe and address.
-// Static lights (EclPars, Fresnels) have no layout here and stay dark on
-// any universe the sketch has taken over.
-
-// Which desk universes the sketch takes over when you press "Take control".
-// Toggled on the page; universe 2 starts with the desk.
-const UNIVERSES = [1, 2];
-const takeover = new Set([1]);
-
-// Pan Invert is ticked for every moving head on the desk; mirror that.
-const INVERT_PAN = true;
+function applyConfig(cfg) {
+  MODELS = {};
+  for (const [key, m] of Object.entries(cfg.models)) {
+    const ch = {};
+    for (const [role, n] of Object.entries(m.channels || {})) ch[role] = n - 1;
+    MODELS[key] = { ...m, ch, names: toOffsets(m.labels), defaults: toOffsets(m.defaults) };
+  }
+  FIXTURES = cfg.lights;
+  UNIVERSES = [...new Set(FIXTURES.map((f) => f.universe))].sort((a, b) => a - b);
+  takeover.clear();
+  takeover.add(UNIVERSES[0]); // the others start with the console
+  for (const u of UNIVERSES) frames[u] = new Array(512).fill(0);
+  frame = frames[UNIVERSES[0]];
+  state.selected = new Set([0]); // start with only the first light
+  buildUi();
+}
 
 // =====================================================================
 
@@ -99,12 +45,12 @@ const state = {
   goboSpin: 0,      // -100..100, spin mode
   focus: 128,
   frost: 0,
-  selected: new Set([0]), // start with only Wash 26
+  selected: new Set(),
   raw: new Map(), // "universe:channel" -> value
 };
-// One 512-channel frame per desk universe.
-const frames = Object.fromEntries(UNIVERSES.map((u) => [u, new Array(512).fill(0)]));
-let frame = frames[UNIVERSES[0]]; // the universe setCh writes to right now
+// One 512-channel frame per console universe, filled in by applyConfig.
+const frames = {};
+let frame = null; // the universe setCh writes to right now
 let lastSentKey = '', lastSendMs = 0, dragging = false;
 
 function setup() {
@@ -115,8 +61,7 @@ function setup() {
   const startDrag = () => { dragging = true; state.sweep = false; el('sweep').checked = false; };
   c.mousePressed(startDrag);
   c.touchStarted(() => { startDrag(); return false; });
-  buildUi();
-  connect();
+  connect(); // UI is built when the config arrives
 }
 
 function mouseReleased() { dragging = false; }
@@ -131,8 +76,10 @@ function draw() {
     state.pan = constrain(mouseX / width, 0, 1);
     state.tilt = constrain(mouseY / height, 0, 1);
   }
-  buildFrame();
-  pushFrame();
+  if (FIXTURES.length) {
+    buildFrame();
+    pushFrame();
+  }
   drawPad();
 }
 
@@ -144,21 +91,24 @@ function put16(ch, fineCh, v01) {
   setCh(fineCh, v & 0xff);
 }
 
-// Gobo wheel channel (Profile300LT ch 14). Each slot range is 8 values wide;
-// +4 picks the middle of the range.
-function goboWheelValue() {
-  if (state.gobo === 0) return 0;                    // open: 0-11
-  const base = state.goboMode === 'spin' ? 68 : 12;  // rotation: 68-123, indexing: 12-67
-  return base + 8 * (state.gobo - 1) + 4;
+// Gobo wheel value. Each slot has a range slotWidth values wide; the middle
+// of the range is used.
+function goboWheelValue(T) {
+  const g = T.gobo;
+  if (state.gobo === 0 || state.gobo > g.slots) return g.openValue;
+  const first = state.goboMode === 'spin' ? g.spinFirst : g.indexFirst;
+  return first + g.slotWidth * (state.gobo - 1) + Math.floor(g.slotWidth / 2);
 }
-// Gobo rotation channel (ch 15): angle in index mode, speed in spin mode.
-function goboRotValue() {
-  if (state.gobo === 0) return 0;
-  if (state.goboMode === 'index') return (state.goboAngle / 360) * 255; // 0-360°
+// Gobo rotation value: angle in index mode, speed in spin mode.
+// Ranges are [slow or 0°, fast or 360°] as DMX values.
+function goboRotValue(T) {
+  const r = T.goboRotation;
+  const along = ([a, b], t) => a + t * (b - a);
+  if (state.gobo === 0) return r.indexRange[0];
+  if (state.goboMode === 'index') return along(r.indexRange, state.goboAngle / 360);
   const s = state.goboSpin;
-  if (s === 0) return 128;                         // no rotation
-  if (s > 0) return 127 - (s / 100) * 126;         // forward: 127 slow -> 1 fast
-  return 129 + (-s / 100) * 126;                   // backward: 129 slow -> 255 fast
+  if (s === 0) return r.stop;
+  return s > 0 ? along(r.forwardRange, s / 100) : along(r.backwardRange, -s / 100);
 }
 
 function buildFrame() {
@@ -166,23 +116,21 @@ function buildFrame() {
   for (const u of UNIVERSES) frames[u].fill(0);
   FIXTURES.forEach((f, i) => {
     frame = frames[f.universe];
-    const T = TYPES[f.type], c = T.ch;
+    const T = MODELS[f.model], c = T.ch;
     const at = (off) => (off == null ? null : f.address + off);
     for (const [off, v] of Object.entries(T.defaults)) setCh(f.address + Number(off), v);
     if (!state.selected.has(i)) return; // unselected: parked at centre, dark
 
-    put16(at(c.pan), at(c.panFine), INVERT_PAN ? 1 - state.pan : state.pan);
+    put16(at(c.pan), at(c.panFine), f.invertPan ? 1 - state.pan : state.pan);
     put16(at(c.tilt), at(c.tiltFine), state.tilt);
     setCh(at(c.dimmer), state.dimmer);
-    setCh(at(c.shutter), T.shutterOpen);
+    if (T.shutterOpen != null) setCh(at(c.shutter), T.shutterOpen);
     setCh(at(c.zoom), T.zoomZeroIsWide ? 255 - state.beam : state.beam);
-    if (c.colorMacro != null) setCh(at(c.colorMacro), state.washColor);
-    if (c.goboWheel != null) {
-      setCh(at(c.goboWheel), goboWheelValue());
-      setCh(at(c.goboRot), goboRotValue());
-      setCh(at(c.focus), state.focus);
-      setCh(at(c.frost), state.frost);
-    }
+    setCh(at(c.colorMacro), state.washColor);
+    if (T.gobo) setCh(at(c.goboWheel), goboWheelValue(T));
+    if (T.goboRotation) setCh(at(c.goboRot), goboRotValue(T));
+    setCh(at(c.focus), state.focus);
+    setCh(at(c.frost), state.frost);
   });
   state.raw.forEach((v, key) => {
     const [u, ch] = key.split(':').map(Number);
@@ -191,7 +139,7 @@ function buildFrame() {
 }
 
 function isControlChannel(u, ch) {
-  return FIXTURES.some((f) => f.universe === u && f.address + TYPES[f.type].ch.control === ch);
+  return FIXTURES.some((f) => f.universe === u && f.address + MODELS[f.model].ch.control === ch);
 }
 
 function pushFrame() {
@@ -236,6 +184,11 @@ function connect() {
   ws.onclose = () => { connected = false; sending = false; updateStatus(); setTimeout(connect, 1500); };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
+    if (m.type === 'config') {
+      const json = JSON.stringify(m);
+      if (configJson && json !== configJson) location.reload(); // bridge restarted with a new config
+      else if (!configJson) { configJson = json; applyConfig(m); }
+    }
     if (m.type === 'status') { sending = m.sending; updateStatus(m); }
   };
 }
@@ -256,29 +209,49 @@ function buildUi() {
     ub.appendChild(lab);
   });
 
-  // Fixture checkboxes, grouped by type
-  for (const type of Object.keys(TYPES)) {
-    const box = el('group-' + type);
+  // Light checkboxes, one group per model
+  for (const [key, T] of Object.entries(MODELS)) {
+    if (!FIXTURES.some((f) => f.model === key)) continue;
+    const set = document.createElement('fieldset');
+    set.innerHTML = '<legend></legend><div class="group"></div><div class="row">'
+      + '<button class="quiet" data-mode="all">All</button><button class="quiet" data-mode="none">None</button></div>';
+    set.querySelector('legend').textContent = T.label;
+    const box = set.querySelector('.group');
     FIXTURES.forEach((f, i) => {
-      if (f.type !== type) return;
+      if (f.model !== key) return;
       const lab = document.createElement('label');
-      lab.innerHTML = `<input type="checkbox" data-i="${i}"${state.selected.has(i) ? ' checked' : ''}> ${f.name} <span class="small">${f.universe}-${String(f.address).padStart(3, '0')}</span>`;
+      lab.innerHTML = `<input type="checkbox" data-i="${i}"${state.selected.has(i) ? ' checked' : ''}> <span></span> <span class="small"></span>`;
+      lab.querySelectorAll('span')[0].textContent = f.name;
+      lab.querySelectorAll('span')[1].textContent = `${f.universe}-${String(f.address).padStart(3, '0')}`;
       lab.querySelector('input').onchange = (e) => {
         e.target.checked ? state.selected.add(i) : state.selected.delete(i);
       };
       box.appendChild(lab);
     });
+    set.querySelectorAll('[data-mode]').forEach((btn) => {
+      btn.onclick = () => {
+        FIXTURES.forEach((f, i) => {
+          if (f.model !== key) return;
+          btn.dataset.mode === 'all' ? state.selected.add(i) : state.selected.delete(i);
+        });
+        document.querySelectorAll('input[data-i]').forEach((cb) => (cb.checked = state.selected.has(+cb.dataset.i)));
+      };
+    });
+    el('groups').appendChild(set);
   }
-  document.querySelectorAll('[data-select]').forEach((btn) => {
-    btn.onclick = () => {
-      const [type, mode] = btn.dataset.select.split(':');
-      FIXTURES.forEach((f, i) => {
-        if (f.type !== type) return;
-        mode === 'all' ? state.selected.add(i) : state.selected.delete(i);
-      });
-      document.querySelectorAll('input[data-i]').forEach((cb) => (cb.checked = state.selected.has(+cb.dataset.i)));
-    };
-  });
+
+  // Show the colour and gobo panels only if some light has those channels.
+  const models = FIXTURES.map((f) => MODELS[f.model]);
+  el('panel-color').hidden = !models.some((T) => T.ch.colorMacro != null);
+  const goboSlots = Math.max(0, ...models.map((T) => (T.gobo ? T.gobo.slots : 0)));
+  el('panel-gobo').hidden = !models.some((T) => T.ch.goboWheel != null || T.ch.focus != null || T.ch.frost != null);
+  for (let g = 1; g <= goboSlots; g++) el('gobo').add(new Option(`Gobo ${g}`, g));
+
+  // Channel finder: universes from the config, starting at the first light's dimmer.
+  UNIVERSES.forEach((u) => el('raw-uni').add(new Option(u, u)));
+  const first = FIXTURES[0], firstDimmer = MODELS[first.model].ch.dimmer;
+  el('raw-uni').value = first.universe;
+  el('raw-ch').value = first.address + (firstDimmer ?? 0);
 
   bindSlider('dimmer', (v) => (state.dimmer = v));
   bindSlider('beam', (v) => (state.beam = v));
@@ -368,7 +341,7 @@ function updateStatus(s) {
 function updatePeek() {
   const i = [...state.selected][0];
   if (i == null) { el('peek').textContent = 'No head selected'; return; }
-  const f = FIXTURES[i], T = TYPES[f.type];
+  const f = FIXTURES[i], T = MODELS[f.model];
   const names = { ...T.names };
   for (const [name, off] of Object.entries(T.ch)) names[off] = name;
   const lines = Object.keys(names).map(Number).sort((a, b) => a - b)
