@@ -22,9 +22,11 @@ const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
 const os = require('os');
+const dns = require('dns');
 const { WebSocketServer } = require('ws');
 const { loadConfig, saveMap } = require('./config');
 const { Rig } = require('./rig');
+const { summarize } = require('./summary');
 
 const CONFIG_PATH = path.resolve(process.argv[2] || path.join(__dirname, '..', 'config.json'));
 const config = loadConfig(CONFIG_PATH);
@@ -94,7 +96,8 @@ const server = http.createServer((req, res) => {
 
 // ---------- Clients ----------
 const wss = new WebSocketServer({ server });
-const clients = new Map(); // ws -> { id, address, canEdit, lastHeard }
+// ws -> { id, address, canEdit, lastHeard, hostName, typedName, connectedAt, last, lastValues }
+const clients = new Map();
 let nextClientId = 1;
 
 function broadcast(text) { wss.clients.forEach((c) => c.readyState === 1 && c.send(text)); }
@@ -106,13 +109,44 @@ function status() {
 function broadcastStatus() { broadcast(status()); }
 setInterval(broadcastStatus, 1000);
 
-// Who is connected and who has which light, sent when it changes.
-let lastState = '';
+// The name shown for a client: typed on its page, else its network name, else its address.
+function label(c) { return c.typedName || c.hostName || c.address; }
+
+// Who is connected, what they last sent, and who has which light. Sent when
+// it changes, at most 5 times a second (pages send up to 30 messages a second).
+let lastState = '', stateDue = false;
+function stateMessage() {
+  const now = Date.now(), list = {};
+  for (const c of clients.values()) {
+    list[c.id] = {
+      label: label(c), address: c.address, hostName: c.hostName, typedName: c.typedName,
+      connectedAgo: now - c.connectedAt,
+      last: c.last && { summary: c.last.summary, raw: c.last.raw, ago: now - c.last.at },
+    };
+  }
+  return { type: 'state', owners: rig.owners(), clients: list };
+}
 function broadcastState(force) {
-  const list = {};
-  for (const c of clients.values()) list[c.id] = { address: c.address };
-  const text = JSON.stringify({ type: 'state', owners: rig.owners(), clients: list });
-  if (force || text !== lastState) { lastState = text; broadcast(text); }
+  if (force) return flushState(true);
+  stateDue = true;
+}
+function flushState(force) {
+  stateDue = false;
+  const msg = stateMessage();
+  // Compare without the ages, which change every millisecond.
+  const key = JSON.stringify(msg, (k, v) => (k === 'ago' || k === 'connectedAgo' ? undefined : v));
+  if (force || key !== lastState) { lastState = key; broadcast(JSON.stringify(msg)); }
+}
+setInterval(() => { if (stateDue) flushState(); }, 200);
+
+// Network name of a client, if the network knows one.
+function lookUpName(c) {
+  if (isThisComputer(c.address)) { c.hostName = os.hostname(); return; }
+  dns.lookupService(c.address, 0, (err, host) => {
+    if (err || !host || host === c.address) return;
+    c.hostName = host;
+    broadcastState();
+  });
 }
 
 // What is being sent to the console, so every page's map can show it.
@@ -159,14 +193,18 @@ function dropClient(ws) {
 
 function refuse(ws, busy, what) {
   const owner = (id) => [...clients.values()].find((c) => c.id === id);
-  const items = busy.map((b) => ({ ...b, address: b.owner ? owner(b.owner)?.address : undefined }));
+  const items = busy.map((b) => ({ ...b, address: b.owner && owner(b.owner) ? label(owner(b.owner)) : undefined }));
   ws.send(JSON.stringify({ type: 'refused', what, items }));
 }
 
 wss.on('connection', (ws, req) => {
   const address = String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
-  const client = { id: `c${nextClientId++}`, address, canEdit: isThisComputer(address), lastHeard: Date.now() };
+  const client = {
+    id: `c${nextClientId++}`, address, canEdit: isThisComputer(address), lastHeard: Date.now(),
+    hostName: null, typedName: null, connectedAt: Date.now(), last: null, lastValues: null,
+  };
   clients.set(ws, client);
+  lookUpName(client);
   console.log(`Client ${client.id} connected from ${address}${client.canEdit ? ' (this computer)' : ''}`);
   ws.send(JSON.stringify({
     type: 'config', models: config.models, lights: config.lights, map: config.map,
@@ -182,7 +220,18 @@ wss.on('connection', (ws, req) => {
     client.lastHeard = Date.now();
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
+    if (!msg || typeof msg !== 'object') return;
     const names = Array.isArray(msg.lights) ? msg.lights.filter((n) => typeof n === 'string') : [];
+
+    // Remember what it sent, for the device list.
+    const mine = Object.values(rig.owners()).filter((o) => o.owner === client.id && (o.selected || o.solo)).length;
+    const text = String(raw);
+    client.last = {
+      summary: summarize(msg, client.lastValues, mine),
+      raw: text.length > 600 ? `${text.slice(0, 600)}…` : text,
+      at: Date.now(),
+    };
+    if (msg.type === 'set' && msg.values) client.lastValues = { ...client.lastValues, ...msg.values };
 
     if (msg.type === 'take') {
       const busy = rig.take(client.id, names, msg.values);
@@ -199,6 +248,19 @@ wss.on('connection', (ws, req) => {
       if (busy) refuse(ws, [busy], 'raw');
     } else if (msg.type === 'raw-clear') {
       rig.clearRaw(client.id);
+    } else if (msg.type === 'name') {
+      const name = typeof msg.name === 'string' ? msg.name.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+      client.typedName = name || null;
+    } else if (msg.type === 'free') {
+      // The bridge computer frees all lights of another client, which stays connected.
+      if (!client.canEdit) return refuse(ws, [{ reason: 'not-bridge-computer' }], 'free');
+      for (const [otherWs, other] of clients) {
+        if (other.id !== msg.client) continue;
+        rig.dropClient(other.id);
+        client.last.summary = `freed the lights of ${label(other)}`;
+        if (otherWs.readyState === 1) otherWs.send(JSON.stringify({ type: 'freed', by: label(client) }));
+        console.log(`${label(client)} freed the lights of ${label(other)}`);
+      }
     } else if (msg.type === 'console') {
       if (!client.canEdit) return refuse(ws, [{ reason: 'not-bridge-computer' }], 'console');
       inControl = !!msg.control;

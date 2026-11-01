@@ -51,6 +51,12 @@
         <span id="out"></span>
       </div>
 
+      <details id="devices" open>
+        <summary>Connected devices <span id="device-count" class="small"></span></summary>
+        <label class="inline">Your name <input type="text" id="my-name" maxlength="40" placeholder="e.g. Anna, phone" autocomplete="off"></label>
+        <ul id="device-list"></ul>
+      </details>
+
       <div class="row">
         <button id="toggle-send" hidden>Release to console</button>
         <button id="blackout" class="quiet">Blackout</button>

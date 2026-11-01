@@ -92,6 +92,13 @@ Anyone on the network can open the page, e.g. on a phone, at `http://<bridge-com
 - **Blackout** only affects your own lights.
 - Editing the map and **Release to console** work only on the bridge computer.
 
+**Connected devices** lists everyone connected to the bridge:
+
+- **Name:** type one in **Your name**; the browser remembers it. Without one, the list shows the device's network name if the bridge can find it (e.g. `annas-macbook.local`), else its IP address. The IP address is always shown. The same name marks lights that device controls.
+- Which lights each device controls.
+- What it last sent, as a short summary with how long ago, e.g. "set dimmer 200 on 3 lights, 2 s ago". Click the summary for the exact message.
+- On the bridge computer, **Free its lights** frees all of a device's lights (they go dark) without disconnecting it; its page says so.
+
 ### Finding a light in the room (solo mode)
 
 1. Tick **Solo one light** under "Solo". Your first ticked light (or the first free light) starts flashing white about twice a second, and your other lights go dark. Other people's lights are left alone.

@@ -14,7 +14,8 @@ let configJson = null;
 let canEdit = false; // true on the bridge computer
 let myId = null;     // this page's id at the bridge
 let owners = {};     // light name -> { owner, selected, solo }, from the bridge
-let clientList = {}; // client id -> { address }
+let clientList = {}; // client id -> { label, address, hostName, typedName, last, ... }
+let stateReceivedAt = 0;
 let inControl = true; // false after "Release to console"
 
 function toOffsets(byChannel) {
@@ -106,11 +107,11 @@ function pushLook() {
   send({ type: 'set', values });
 }
 
-// Who has a light, if it's someone else: their address, or null.
+// Who has a light, if it's someone else: their name or address, or null.
 function otherOwner(i) {
   const o = owners[FIXTURES[i].name];
   if (!o || o.owner === myId) return null;
-  return (clientList[o.owner] && clientList[o.owner].address) || 'someone else';
+  return (clientList[o.owner] && clientList[o.owner].label) || 'someone else';
 }
 function busyNote(i) {
   note(`${FIXTURES[i].name} is being controlled by ${otherOwner(i)}.`);
@@ -156,8 +157,89 @@ function onRefused(m) {
       : `${item.name || item.channel} is being controlled by ${who}.`);
   } else if (m.what === 'console') {
     note('Only the bridge computer can hand the lights to the console.');
+  } else if (m.what === 'free') {
+    note('Only the bridge computer can free other devices\' lights.');
   }
 }
+
+// The bridge computer freed this page's lights.
+function onFreed(m) {
+  state.selected.clear();
+  state.raw.clear(); renderRaw();
+  showSolo(null);
+  syncSelectedBoxes();
+  note(`${m.by} freed your lights. Tick them again to control them.`);
+}
+
+// ---------- Connected devices ----------
+
+function savedName() {
+  try { return localStorage.getItem('light-control-name') || ''; } catch { return ''; }
+}
+
+function ago(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  return `${Math.floor(s / 3600)} h ago`;
+}
+
+// One entry per connected device: name, address, its lights, and what it
+// last sent (click for the exact message). Ages count up between updates.
+function renderDevices() {
+  const ul = el('device-list');
+  if (!ul) return;
+  const since = Date.now() - stateReceivedAt;
+  const ids = Object.keys(clientList).sort((a, b) => (a === myId ? -1 : b === myId ? 1 : 0));
+  el('device-count').textContent = `(${ids.length})`;
+  const openRaw = new Set([...ul.querySelectorAll('details[open]')].map((d) => d.dataset.id));
+  ul.replaceChildren();
+  for (const id of ids) {
+    const c = clientList[id];
+    const li = document.createElement('li');
+    const head = document.createElement('div');
+    head.className = 'device-head';
+    const name = document.createElement('strong');
+    name.textContent = c.typedName || c.hostName || c.address;
+    head.appendChild(name);
+    const addr = document.createElement('span');
+    addr.className = 'small';
+    addr.textContent = [c.typedName && c.hostName, c.address, id === myId && '(this page)'].filter(Boolean).join(' · ');
+    head.appendChild(addr);
+    const lights = Object.entries(owners).filter(([, o]) => o.owner === id).map(([n]) => n);
+    if (canEdit && id !== myId && lights.length) {
+      const btn = document.createElement('button');
+      btn.className = 'quiet';
+      btn.textContent = 'Free its lights';
+      btn.onclick = () => send({ type: 'free', client: id });
+      head.appendChild(btn);
+    }
+    li.appendChild(head);
+    const has = document.createElement('div');
+    has.className = 'small';
+    has.textContent = lights.length ? `Controls ${lights.join(', ')}` : 'Controls no lights';
+    li.appendChild(has);
+    if (c.last) {
+      const det = document.createElement('details');
+      det.dataset.id = id;
+      det.open = openRaw.has(id);
+      const sum = document.createElement('summary');
+      sum.className = 'small';
+      sum.textContent = `Last: ${c.last.summary}, ${ago(c.last.ago + since)}`;
+      const pre = document.createElement('pre');
+      pre.textContent = c.last.raw;
+      det.append(sum, pre);
+      li.appendChild(det);
+    } else {
+      const quiet = document.createElement('div');
+      quiet.className = 'small';
+      quiet.textContent = `Has sent nothing yet (connected ${ago(c.connectedAgo + since)})`;
+      li.appendChild(quiet);
+    }
+    ul.appendChild(li);
+  }
+}
+setInterval(renderDevices, 1000);
 
 // ---------- Drawing ----------
 function drawPad() {
@@ -197,9 +279,15 @@ function connect() {
       if (configJson && json !== configJson) { location.reload(); return; } // bridge restarted with a new config
       if (!configJson) { configJson = json; applyConfig(m); initMap(m.map, m.canEdit); }
       else retake();
+      const name = savedName();
+      if (name) send({ type: 'name', name });
       updateStatus();
     }
-    if (m.type === 'state') { owners = m.owners; clientList = m.clients; renderOwners(); }
+    if (m.type === 'state') {
+      owners = m.owners; clientList = m.clients; stateReceivedAt = Date.now();
+      renderOwners(); renderDevices();
+    }
+    if (m.type === 'freed') onFreed(m);
     if (m.type === 'refused') onRefused(m);
     if (m.type === 'map') mapFromBridge(m.map, m.id);
     if (m.type === 'output') { outputFromBridge(m); updatePeek(); }
@@ -214,6 +302,14 @@ function el(id) { return document.getElementById(id); }
 function note(text) { el('control-note').textContent = text; }
 
 function buildUi() {
+  // Your name, remembered by this browser and shown to everyone.
+  el('my-name').value = savedName();
+  el('my-name').onchange = (e) => {
+    const name = e.target.value.trim();
+    try { localStorage.setItem('light-control-name', name); } catch { /* private window: not remembered */ }
+    send({ type: 'name', name });
+  };
+
   // Light checkboxes, one group per model
   for (const [key, T] of Object.entries(MODELS)) {
     if (!FIXTURES.some((f) => f.model === key)) continue;
