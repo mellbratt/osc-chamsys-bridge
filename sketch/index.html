@@ -31,6 +31,16 @@
         <button id="blackout" class="quiet">Blackout</button>
       </div>
 
+      <fieldset id="panel-solo">
+        <legend>Solo</legend>
+        <label class="check"><input type="checkbox" id="solo"> Solo one light to find it in the room</label>
+        <div id="solo-id" hidden>
+          <p id="solo-name" class="solo-name"></p>
+          <p id="solo-note" class="small"></p>
+        </div>
+        <p class="small">The soloed light flashes white; every other moving light is dark. Click a light's name below, or use ↑ and ↓, to pick another.</p>
+      </fieldset>
+
       <div id="groups" class="controls"></div>
 
       <label class="slider">Dimmer

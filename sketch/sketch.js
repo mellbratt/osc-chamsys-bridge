@@ -46,12 +46,14 @@ const state = {
   focus: 128,
   frost: 0,
   selected: new Set(),
+  solo: null, // index of the soloed light, or null when solo mode is off
   raw: new Map(), // "universe:channel" -> value
 };
 // One 512-channel frame per console universe, filled in by applyConfig.
 const frames = {};
 let frame = null; // the universe setCh writes to right now
 let lastSentKey = '', lastSendMs = 0, dragging = false;
+let displayOrder = []; // light indexes in the order the list shows them
 
 function setup() {
   const holder = document.getElementById('pad-holder');
@@ -93,44 +95,55 @@ function put16(ch, fineCh, v01) {
 
 // Gobo wheel value. Each slot has a range slotWidth values wide; the middle
 // of the range is used.
-function goboWheelValue(T) {
+function goboWheelValue(T, look) {
   const g = T.gobo;
-  if (state.gobo === 0 || state.gobo > g.slots) return g.openValue;
-  const first = state.goboMode === 'spin' ? g.spinFirst : g.indexFirst;
-  return first + g.slotWidth * (state.gobo - 1) + Math.floor(g.slotWidth / 2);
+  if (look.gobo === 0 || look.gobo > g.slots) return g.openValue;
+  const first = look.goboMode === 'spin' ? g.spinFirst : g.indexFirst;
+  return first + g.slotWidth * (look.gobo - 1) + Math.floor(g.slotWidth / 2);
 }
 // Gobo rotation value: angle in index mode, speed in spin mode.
 // Ranges are [slow or 0°, fast or 360°] as DMX values.
-function goboRotValue(T) {
+function goboRotValue(T, look) {
   const r = T.goboRotation;
   const along = ([a, b], t) => a + t * (b - a);
-  if (state.gobo === 0) return r.indexRange[0];
-  if (state.goboMode === 'index') return along(r.indexRange, state.goboAngle / 360);
-  const s = state.goboSpin;
+  if (look.gobo === 0) return r.indexRange[0];
+  if (look.goboMode === 'index') return along(r.indexRange, look.goboAngle / 360);
+  const s = look.goboSpin;
   if (s === 0) return r.stop;
   return s > 0 ? along(r.forwardRange, s / 100) : along(r.backwardRange, -s / 100);
+}
+
+// Solo mode: the soloed light flashes full white about twice a second, with
+// a wide open beam, so it's easy to spot. Pan/tilt still follow the pad.
+const SOLO_FLASH_MS = 250; // on 250 ms, off 250 ms
+function soloLook() {
+  const on = Math.floor(millis() / SOLO_FLASH_MS) % 2 === 0;
+  return { ...state, dimmer: on ? 255 : 0, beam: 255, washColor: null, gobo: 0, frost: 0 };
 }
 
 function buildFrame() {
   // Hot takeover: each frame replaces that WHOLE universe on the desk.
   for (const u of UNIVERSES) frames[u].fill(0);
+  const soloing = state.solo != null;
+  const look = soloing ? soloLook() : state;
   FIXTURES.forEach((f, i) => {
     frame = frames[f.universe];
     const T = MODELS[f.model], c = T.ch;
     const at = (off) => (off == null ? null : f.address + off);
     for (const [off, v] of Object.entries(T.defaults)) setCh(f.address + Number(off), v);
-    if (!state.selected.has(i)) return; // unselected: parked at centre, dark
+    // Lights not in use stay parked at their defaults (centre) and dark.
+    if (soloing ? i !== state.solo : !state.selected.has(i)) return;
 
-    put16(at(c.pan), at(c.panFine), f.invertPan ? 1 - state.pan : state.pan);
-    put16(at(c.tilt), at(c.tiltFine), state.tilt);
-    setCh(at(c.dimmer), state.dimmer);
+    put16(at(c.pan), at(c.panFine), f.invertPan ? 1 - look.pan : look.pan);
+    put16(at(c.tilt), at(c.tiltFine), look.tilt);
+    setCh(at(c.dimmer), look.dimmer);
     if (T.shutterOpen != null) setCh(at(c.shutter), T.shutterOpen);
-    setCh(at(c.zoom), T.zoomZeroIsWide ? 255 - state.beam : state.beam);
-    setCh(at(c.colorMacro), state.washColor);
-    if (T.gobo) setCh(at(c.goboWheel), goboWheelValue(T));
-    if (T.goboRotation) setCh(at(c.goboRot), goboRotValue(T));
-    setCh(at(c.focus), state.focus);
-    setCh(at(c.frost), state.frost);
+    setCh(at(c.zoom), T.zoomZeroIsWide ? 255 - look.beam : look.beam);
+    setCh(at(c.colorMacro), look.washColor ?? T.colorMacroWhite ?? 0);
+    if (T.gobo) setCh(at(c.goboWheel), goboWheelValue(T, look));
+    if (T.goboRotation) setCh(at(c.goboRot), goboRotValue(T, look));
+    setCh(at(c.focus), look.focus);
+    setCh(at(c.frost), look.frost);
   });
   state.raw.forEach((v, key) => {
     const [u, ch] = key.split(':').map(Number);
@@ -173,6 +186,7 @@ function drawPad() {
   }
   fill(242, 176, 74); circle(x, y, 14);
   fill(154, 163, 179); textSize(12);
+  if (state.solo != null) text(`Solo: ${FIXTURES[state.solo].name}`, 10, 20);
   const g = state.gobo ? `  gobo ${state.gobo}` : '';
   text(`pan ${(state.pan * 100).toFixed(0)}%  tilt ${(state.tilt * 100).toFixed(0)}%${g}`, 10, height - 10);
 }
@@ -205,6 +219,7 @@ function buildUi() {
     lab.innerHTML = `<input type="checkbox"${takeover.has(u) ? ' checked' : ''}> Universe ${u}`;
     lab.querySelector('input').onchange = (e) => {
       e.target.checked ? takeover.add(u) : takeover.delete(u);
+      updateSoloId();
     };
     ub.appendChild(lab);
   });
@@ -223,9 +238,17 @@ function buildUi() {
       lab.innerHTML = `<input type="checkbox" data-i="${i}"${state.selected.has(i) ? ' checked' : ''}> <span></span> <span class="small"></span>`;
       lab.querySelectorAll('span')[0].textContent = f.name;
       lab.querySelectorAll('span')[1].textContent = `${f.universe}-${String(f.address).padStart(3, '0')}`;
+      lab.dataset.i = i;
       lab.querySelector('input').onchange = (e) => {
         e.target.checked ? state.selected.add(i) : state.selected.delete(i);
       };
+      // In solo mode, clicking a light's name solos it instead of ticking it.
+      lab.onclick = (e) => {
+        if (state.solo == null) return;
+        e.preventDefault();
+        setSolo(i);
+      };
+      displayOrder.push(i);
       box.appendChild(lab);
     });
     set.querySelectorAll('[data-mode]').forEach((btn) => {
@@ -276,7 +299,22 @@ function buildUi() {
   el('blackout').onclick = () => {
     state.dimmer = 0; el('dimmer').value = 0; el('dimmer-out').textContent = 0;
     state.raw.clear(); renderRaw();
+    if (state.solo != null) setSolo(null);
   };
+
+  // Solo mode starts on the first ticked light, or the top of the list.
+  el('solo').onchange = (e) => {
+    const firstTicked = displayOrder.find((i) => state.selected.has(i));
+    setSolo(e.target.checked ? firstTicked ?? displayOrder[0] : null);
+  };
+  document.addEventListener('keydown', (e) => {
+    if (state.solo == null || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    // Leave arrow keys alone in sliders, number fields, lists and radio buttons.
+    if (e.target.matches('input:not([type=checkbox]), select, textarea')) return;
+    e.preventDefault();
+    const at = displayOrder.indexOf(state.solo), n = displayOrder.length;
+    setSolo(displayOrder[(at + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]);
+  });
 
   const rawKey = () => `${el('raw-uni').value}:${parseInt(el('raw-ch').value, 10)}`;
   const applyRaw = () => {
@@ -295,6 +333,29 @@ function buildUi() {
     el('raw-val').value = v; el('raw-out').textContent = v;
   };
   el('raw-clear').onclick = () => { state.raw.clear(); renderRaw(); };
+}
+
+function setSolo(i) {
+  state.solo = i;
+  el('solo').checked = i != null;
+  document.body.classList.toggle('solo-mode', i != null);
+  document.querySelectorAll('.group label').forEach((lab) => {
+    lab.classList.toggle('solo', i != null && +lab.dataset.i === i);
+  });
+  updateSoloId();
+  updatePeek();
+}
+
+// Shows which light is soloed, and why it might not be visible in the room.
+function updateSoloId() {
+  const box = el('solo-id');
+  if (state.solo == null) { box.hidden = true; return; }
+  const f = FIXTURES[state.solo];
+  box.hidden = false;
+  el('solo-name').textContent = `${f.name}, ${f.universe}-${String(f.address).padStart(3, '0')}`;
+  el('solo-note').textContent = !takeover.has(f.universe)
+    ? `Universe ${f.universe} isn't ticked under "Universes to take over", so this light isn't being sent.`
+    : !sending ? 'Press "Take control" to see it flash.' : '';
 }
 
 function configureGoboSlider() {
@@ -334,12 +395,13 @@ function updateStatus(s) {
   }
   if (s && s.lastError) out.textContent += `  Error: ${s.lastError}`;
   btn.textContent = sending ? 'Release to desk' : 'Take control';
+  if (FIXTURES.length) updateSoloId();
   btn.classList.toggle('live', sending);
 }
 
 // Shows the named channels of the first selected head, as sent.
 function updatePeek() {
-  const i = [...state.selected][0];
+  const i = state.solo ?? [...state.selected][0];
   if (i == null) { el('peek').textContent = 'No head selected'; return; }
   const f = FIXTURES[i], T = MODELS[f.model];
   const names = { ...T.names };

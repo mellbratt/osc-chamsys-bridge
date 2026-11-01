@@ -43,3 +43,9 @@ pre { font-size: 0.8rem; color: var(--dim); white-space: pre-wrap; }
 fieldset .row { margin-top: 0.5rem; }
 fieldset button.quiet { padding: 0.3rem 0.8rem; font-size: 0.875rem; }
 select { font: inherit; padding: 0.25rem; grid-column: 2 / 4; }
+
+/* Solo mode: the light list becomes a picker. */
+.solo-name { font-size: 1.25rem; font-weight: 600; color: var(--tungsten); margin: 0.5rem 0 0; }
+body.solo-mode .group input[type=checkbox] { display: none; }
+body.solo-mode .group label { cursor: pointer; padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid transparent; }
+body.solo-mode .group label.solo { border-color: var(--tungsten); color: var(--tungsten); font-weight: 600; }

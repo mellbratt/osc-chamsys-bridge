@@ -76,6 +76,15 @@ Then open http://localhost:8080.
 2. Select fixtures, press **Take control**, raise the dimmer.
 3. Press **Release to desk** when finished.
 
+### Finding a light in the room (solo mode)
+
+1. Tick **Solo one light** under "Solo". The first ticked light starts flashing white about twice a second, and every other moving light goes dark and parks at centre.
+2. Click a light's name in the list, or press ↑ and ↓, to solo another one. The page shows the soloed light's name and console address, e.g. "Wash 26, 1-061".
+3. Aim it with the pan/tilt pad to see where it points.
+4. Untick **Solo** (or press **Blackout**) to go back to the lights you had ticked.
+
+The soloed light is only visible if its universe is ticked under "Universes to take over"; the page says so if it isn't.
+
 **Warning: takeover is per whole universe.** While a universe is taken over, every channel the page does not set is 0, so the static lights on that universe go dark.
 
 ## Room configuration
@@ -105,6 +114,7 @@ One entry per light model, keyed by a short name the lights refer to.
 | `labels` | Names for other channels, shown under "Outgoing values". |
 | `shutterOpen` | Shutter channel value that opens the shutter. |
 | `zoomZeroIsWide` | `true` if zoom value 0 is the widest beam. |
+| `colorMacroWhite` | Colour macro value for open white, used by solo mode. Optional, default `0`. |
 | `gobo` | Gobo wheel values: number of `slots`, `openValue`, the first value of slot 1 in fixed (`indexFirst`) and spinning (`spinFirst`) mode, and `slotWidth`, how many values each slot spans. |
 | `goboRotation` | Gobo rotation values: `indexRange` for 0° to 360°, `stop`, and `forwardRange` and `backwardRange` from slow to fast. |
 | `defaults` | Values sent on channels the page doesn't drive, by channel number. |
