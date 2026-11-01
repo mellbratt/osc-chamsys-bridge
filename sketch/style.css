@@ -1,0 +1,45 @@
+:root {
+  --house: #1d2330;      /* dark auditorium blue-grey */
+  --panel: #262e3d;
+  --ink: #ebe6da;
+  --dim: #9aa3b3;
+  --tungsten: #f2b04a;   /* warm lamp light */
+  --stop: #e0604f;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--house); color: var(--ink);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main {
+  display: grid; grid-template-columns: minmax(280px, 440px) minmax(280px, 420px);
+  gap: 2rem; padding: 2rem; justify-content: center;
+}
+@media (max-width: 760px) { main { grid-template-columns: 1fr; padding: 1rem; } }
+#pad-holder canvas { display: block; border-radius: 6px; touch-action: none; }
+.hint, .small { color: var(--dim); font-size: 0.875rem; margin: 0.5rem 0; }
+.controls { display: flex; flex-direction: column; gap: 1rem; }
+.status { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+#conn.ok { color: var(--ink); } #conn.bad { color: var(--stop); }
+#out.live { color: var(--tungsten); font-weight: 600; }
+.row { display: flex; gap: 0.75rem; }
+button {
+  font: inherit; padding: 0.6rem 1rem; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--tungsten); background: var(--tungsten); color: #1d2330; font-weight: 600;
+}
+button.live { background: var(--stop); border-color: var(--stop); color: #fff; }
+button.quiet { background: transparent; color: var(--ink); border-color: var(--dim); font-weight: 400; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--tungsten); outline-offset: 2px; }
+fieldset { border: 1px solid #3a4456; border-radius: 6px; padding: 0.75rem 1rem; margin: 0; }
+legend { padding: 0 0.4rem; color: var(--dim); }
+.slider { display: grid; grid-template-columns: 5rem 1fr 2.5rem; align-items: center; gap: 0.5rem; margin: 0.25rem 0; }
+.slider input[type=number] { grid-column: 2 / 4; width: 6rem; font: inherit; padding: 0.25rem; }
+output { text-align: right; font-variant-numeric: tabular-nums; }
+input[type=range] { accent-color: var(--tungsten); }
+.check { display: flex; gap: 0.5rem; align-items: center; }
+#fixtures label { display: inline-flex; gap: 0.35rem; margin-right: 1rem; }
+pre { font-size: 0.8rem; color: var(--dim); white-space: pre-wrap; }
+.group label { display: inline-flex; gap: 0.35rem; margin: 0 1rem 0.35rem 0; }
+fieldset .row { margin-top: 0.5rem; }
+fieldset button.quiet { padding: 0.3rem 0.8rem; font-size: 0.875rem; }
+select { font: inherit; padding: 0.25rem; grid-column: 2 / 4; }

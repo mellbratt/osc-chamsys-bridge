@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QuickQ test rig</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section class="stage">
+      <div id="pad-holder"></div>
+      <p class="hint">Drag to aim. Left–right is pan, up–down is tilt.</p>
+    </section>
+
+    <section class="controls">
+      <div class="status">
+        <span id="conn">Connecting to bridge…</span>
+        <span id="out"></span>
+      </div>
+
+      <fieldset>
+        <legend>Universes to take over</legend>
+        <div id="universes" class="row"></div>
+        <p class="small">Each ticked universe goes fully to the sketch: its static lights go dark. Unticked ones stay with the desk.</p>
+      </fieldset>
+
+      <div class="row">
+        <button id="toggle-send">Take control</button>
+        <button id="blackout" class="quiet">Blackout</button>
+      </div>
+
+      <fieldset>
+        <legend>Jet Wash 7</legend>
+        <div id="group-wash7" class="group"></div>
+        <div class="row"><button class="quiet" data-select="wash7:all">All</button><button class="quiet" data-select="wash7:none">None</button></div>
+      </fieldset>
+      <fieldset>
+        <legend>Jet Profile300LT (gobos)</legend>
+        <div id="group-profile300" class="group"></div>
+        <div class="row"><button class="quiet" data-select="profile300:all">All</button><button class="quiet" data-select="profile300:none">None</button></div>
+      </fieldset>
+
+      <label class="slider">Dimmer
+        <input type="range" id="dimmer" min="0" max="255" value="0"><output id="dimmer-out">0</output>
+      </label>
+      <label class="slider">Beam
+        <input type="range" id="beam" min="0" max="255" value="128"><output id="beam-out">128</output>
+      </label>
+      <label class="check"><input type="checkbox" id="sweep"> Sweep in a slow circle</label>
+
+      <fieldset>
+        <legend>Wash 7 colour</legend>
+        <label class="slider">Macro
+          <input type="range" id="color" min="0" max="255" value="0"><output id="color-out">0</output>
+        </label>
+        <p class="small">0 = open white. Higher values step through gel colours.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Profile gobos</legend>
+        <label class="slider">Gobo
+          <select id="gobo">
+            <option value="0">Open (no gobo)</option>
+            <option value="1">Gobo 1</option><option value="2">Gobo 2</option>
+            <option value="3">Gobo 3</option><option value="4">Gobo 4</option>
+            <option value="5">Gobo 5</option><option value="6">Gobo 6</option>
+            <option value="7">Gobo 7</option>
+          </select>
+        </label>
+        <div class="row">
+          <label class="check"><input type="radio" name="gobo-mode" value="index" checked> Fixed angle</label>
+          <label class="check"><input type="radio" name="gobo-mode" value="spin"> Spin</label>
+        </div>
+        <label class="slider"><span id="gobo-move-label">Angle</span>
+          <input type="range" id="gobo-move" min="0" max="360" value="0"><output id="gobo-move-out">0°</output>
+        </label>
+        <label class="slider">Focus
+          <input type="range" id="focus" min="0" max="255" value="128"><output id="focus-out">128</output>
+        </label>
+        <label class="slider">Frost
+          <input type="range" id="frost" min="0" max="255" value="0"><output id="frost-out">0</output>
+        </label>
+        <p class="small">Spin: negative is backwards, positive forwards, 0 stops. Adjust focus for a sharp image.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Channel finder</legend>
+        <p class="small">Poke any single DMX channel to find out what it does. Overrides everything else. Starts at 1-065, the dimmer of Wash 26.</p>
+        <label class="slider">Universe
+          <select id="raw-uni"><option value="1">1</option><option value="2">2</option></select>
+        </label>
+        <label class="slider">Channel
+          <input type="number" id="raw-ch" min="1" max="512" value="65">
+        </label>
+        <label class="slider">Value
+          <input type="range" id="raw-val" min="0" max="255" value="0"><output id="raw-out">0</output>
+        </label>
+        <button id="raw-clear" class="quiet">Clear overrides</button>
+        <p class="small" id="raw-list"></p>
+      </fieldset>
+
+      <details>
+        <summary>Outgoing values, first selected head</summary>
+        <pre id="peek"></pre>
+      </details>
+    </section>
+  </main>
+  <script src="sketch.js"></script>
+</body>
+</html>
