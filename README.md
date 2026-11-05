@@ -69,7 +69,7 @@ Then open http://localhost:8080.
 - **Config file:** the bridge reads `config.json` in the repo root. To use another file: `node bridge.js path/to/room.json`. `config.json` is not checked in, so each room keeps its own. See [Room configuration](#room-configuration).
 - **Universe mapping:** `console.artnetUniverseForUniverse1` is the Art-Net universe that console universe 1 maps to, usually `0`. Console universe 2 is then sent as the next Art-Net universe.
 - **Broadcast:** if the console's IP is unknown, set `console.ip` to the subnet's broadcast address, e.g. `10.255.255.255`.
-- **Offline use:** the page loads p5.js from a CDN. Open it once while online, or download `p5.min.js` into `sketch/` and change the script tag in `index.html`.
+- **Offline use:** everything the page needs, including p5.js, is in the repo (`sketch/vendor/`), so it works on a network without internet access. Only `npm install` needs internet, once.
 
 ## Console and network setup
 
