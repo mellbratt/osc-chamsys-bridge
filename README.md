@@ -13,7 +13,7 @@ This first version has two parts:
 browser (p5.js page) --WebSocket--> bridge.js --Art-Net (UDP 6454)--> ChamSys QuickQ --DMX--> fixtures
 ```
 
-- **The page** has a light map, a pan/tilt pad, dimmer, zoom, colour macro, gobo/rotation/focus/frost, solo mode for finding lights, and a channel finder for setting any single channel.
+- **The page** has a light map, a pan/tilt pad, one section of controls per kind of light (dimmer, colour wheel, white temperature, zoom, gobos, focus, frost — only what that kind has), solo mode for finding lights, and a channel finder for setting any single channel.
 - **The bridge** keeps track of who controls which light, works out the DMX values for every universe that has lights, wraps them in ArtDmx packets and sends them to the console 30 times per second.
 - **The console** uses hot takeover: when it receives Art-Net on a universe that allows external control, it stops outputting its own values and passes the incoming ones to its DMX outputs.
   - When the bridge stops sending (**Release to console**, or the bridge is stopped), the console takes the universe back after a few seconds.
@@ -24,7 +24,7 @@ Tested on a ChamSys QuickQ 30 with Jet Wash 7, Jet Profile300LT, EclPar IPMFC an
 
 | Works | Doesn't work yet |
 |---|---|
-| Taking over universes 1 and 2 | **Colour.** The page's colour control sets the colour-preset channel, which hasn't changed the light's colour in tests. The cause isn't known yet. The Profile300LT's CMY and colour wheels and the Fresnel's colour channels have no control on the page yet. |
+| Taking over universes 1 and 2 | **Colour.** The old colour control set a colour-preset number and did nothing on Profiles and Fresnels. It has been replaced by a colour wheel and white slider per kind of light (see [Colour](#colour)), not yet tested on the console. |
 | Dimmer | |
 | Pan and tilt, including Sweep | |
 | Beam (zoom) | |
@@ -72,7 +72,7 @@ Then open http://localhost:8080.
 - **Config file:** the bridge reads `config.json` in the repo root. To use another file: `node bridge.js path/to/room.json`. `config.json` is not checked in, so each room keeps its own. See [Room configuration](#room-configuration).
 - **Universe mapping:** `console.artnetUniverseForUniverse1` is the Art-Net universe that console universe 1 maps to, usually `0`. Console universe 2 is then sent as the next Art-Net universe.
 - **Broadcast:** if the console's IP is unknown, set `console.ip` to the subnet's broadcast address, e.g. `10.255.255.255`.
-- **Offline use:** the page loads p5.js from a CDN. Open it once while online, or download `p5.min.js` into `sketch/` and change the script tag in `index.html`.
+- **Offline use:** everything the page needs, including p5.js, is in the repo (`sketch/vendor/`), so it works on a network without internet access. Only `npm install` needs internet, once.
 
 ## Console and network setup
 
@@ -89,9 +89,24 @@ Then open http://localhost:8080.
 
 While the bridge runs, it controls every console universe that has lights in the config. Lights nobody is controlling are dark and parked at centre.
 
-1. Tick the lights you want to control, in the list or by clicking them on the map.
-2. Raise the dimmer and set the other controls. They apply to all your ticked lights.
-3. Untick lights, or close the page, when finished: they go dark again.
+The page has one section per kind of light (e.g. Jet Wash 7, Jet Profile300LT). Each section lists that kind's lights, says what that kind can do (move, colour, white range, zoom, gobos, focus, frost), and has controls for only those things. All kinds are always shown, so it's clear what each one can and can't do.
+
+1. Tick the lights you want to control, in their section or by clicking them on the map.
+2. Set that section's controls. They apply to your ticked lights of that kind only; a section's controls are greyed out until you tick one of its lights.
+3. Aim with the pan/tilt pad: it moves all your ticked lights that can move.
+4. Untick lights, or close the page, when finished: they go dark again.
+
+### Colour
+
+Every kind of light is set the same way: pick a colour on the **colour wheel** (the further from the centre, the more colour; the centre is white) and set the white's temperature with the **White** slider. Each kind makes that colour its own way:
+
+| Kind | How it makes the colour |
+|---|---|
+| Jet Wash 7, EclFresnel CT+ | White from the colour-temperature channel, colour from red/green/blue, blended by the crossfade channel |
+| Jet Profile300LT | Cyan, magenta and yellow filters take colour out of its white light; CTO makes the white warmer (2800–6500 K) |
+| EclPar IPMFC | Mixes red, green, blue and warm white directly; its white temperature is approximate |
+
+The map shows each light in the colour worked out from what is being sent.
 
 **Release to console** (on the bridge computer only) hands every universe back to the console, e.g. to run a show from it. **Take back from console** returns control to the bridge.
 
@@ -168,11 +183,13 @@ One entry per light model, keyed by a short name the lights refer to.
 | `channelCount` | Number of channels in the DMX mode used. |
 | `symbol` | Symbol on the map: `circle`, `triangle`, `square` or `diamond`. Optional. |
 | `panDegrees`, `tiltDegrees` | Pan and tilt range in degrees, from the spec sheet. The map draws direction arrows only for models that have both; `null` if unknown. |
-| `channels` | Which channel does what: `pan`, `panFine`, `tilt`, `tiltFine`, `dimmer`, `shutter`, `zoom`, `colorMacro`, `goboWheel`, `goboRot`, `focus`, `frost`, `control`, and `red`, `green`, `blue`, `white` for the map's colour. Leave out what the model doesn't have. |
+| `channels` | Which channel does what: `pan`, `panFine`, `tilt`, `tiltFine`, `dimmer`, `shutter`, `zoom`, `colorMacro`, `goboWheel`, `goboRot`, `focus`, `frost`, `control`, and for colour `red`, `green`, `blue`, `white`, `cct`, `cctFine`, `crossfade` (from white to colour), `cyan`, `magenta`, `yellow`, `cto`. Leave out what the model doesn't have; the page shows only the controls a model has channels for. |
+| `cctRange` | Kelvin at `cct` values 0 and 255, e.g. `[2800, 10000]`. Optional, default `[2800, 10000]`. |
+| `ctoRange` | Kelvin at full CTO and at no CTO (the light's own white), e.g. `[2800, 6500]`. Optional, default `[2800, 6500]`. |
 | `labels` | Names for other channels, shown under "Outgoing values". |
 | `shutterOpen` | Shutter channel value that opens the shutter. |
 | `zoomZeroIsWide` | `true` if zoom value 0 is the widest beam. |
-| `colorMacroWhite` | Colour macro value for open white, used by solo mode. Optional, default `0`. |
+| `colorMacroWhite` | Colour macro value for open white, used by solo mode. Optional, default `0`. The page doesn't use colour presets; with colour channels set, the bridge keeps the preset channel at open. |
 | `gobo` | Gobo wheel values: number of `slots`, `openValue`, the first value of slot 1 in fixed (`indexFirst`) and spinning (`spinFirst`) mode, and `slotWidth`, how many values each slot spans. |
 | `goboRotation` | Gobo rotation values: `indexRange` for 0° to 360°, `stop`, and `forwardRange` and `backwardRange` from slow to fast. |
 | `defaults` | Values sent on channels the page doesn't drive, by channel number. |
@@ -183,14 +200,16 @@ Example layouts (Prolights, "Standard" mode):
 
 | Model | Channels | Source |
 |---|---|---|
-| Jet Wash 7 | 23 | Jet Wash7 user manual, rev. 04/22 |
-| Jet Profile300LT | 38 | Jet Profile300LT user manual, rev. 25/Nov/25 |
+| Jet Wash 7 | 23 | Jet Wash7 DMX chart |
+| Jet Profile300LT | 38 | Jet Profile300LT DMX chart |
+| EclPar IPMFC | 9 | EclPar IPMFC DMX chart |
+| EclFresnel CT+M | 11 | EclFresnel CT+ S/M/L DMX chart |
 
-**Profile300LT channel count:** some Prolights spec pages list 37 channels for Standard mode. Check the light's channel count on the console before relying on the layout.
+The DMX charts are on the Prolights / Music & Lights product pages.
 
 ### `lights`
 
-One entry per moving light. The console's notation `2-106` means universe 2, address 106.
+One entry per light. The console's notation `2-106` means universe 2, address 106.
 
 | Key | Meaning |
 |---|---|

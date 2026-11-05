@@ -10,15 +10,23 @@
 //
 // Settings use the same units as the page's controls:
 //   pan, tilt 0..1; dimmer, beam, colorMacro, focus, frost 0..255;
+//   hue 0..360, sat 0..1, kelvin (see sketch/colour.js);
 //   gobo 0 (open) or slot number; goboMode 'index' | 'spin';
 //   goboAngle 0..360; goboSpin -100..100.
+//
+// Settings can be sent for all of a client's lights, or for one model only
+// (the page has one set of controls per model).
 
+const { colourValues } = require('../sketch/colour.js');
+
+const WHITE = { hue: 0, sat: 0, kelvin: 5600 };
 const DEFAULT_LOOK = {
-  pan: 0.5, tilt: 0.5, dimmer: 0, beam: 128, colorMacro: 0,
+  pan: 0.5, tilt: 0.5, dimmer: 0, beam: 128, colorMacro: 0, ...WHITE,
   gobo: 0, goboMode: 'index', goboAngle: 0, goboSpin: 0, focus: 128, frost: 0,
 };
 const RANGES = {
   pan: [0, 1], tilt: [0, 1], dimmer: [0, 255], beam: [0, 255], colorMacro: [0, 255],
+  hue: [0, 360], sat: [0, 1], kelvin: [1000, 20000],
   gobo: [0, 64], goboAngle: [0, 360], goboSpin: [-100, 100], focus: [0, 255], frost: [0, 255],
 };
 const SOLO_FLASH_MS = 250; // on 250 ms, off 250 ms
@@ -62,8 +70,16 @@ class Rig {
 
   // ---------- Ownership ----------
 
-  // Takes lights for a client and gives them its look. Returns busy lights.
-  take(client, names, values) {
+  // The settings a light gets from shared values plus its model's own values.
+  lookFor(name, s, values, looks) {
+    const model = this.byName.get(name).model;
+    const own = looks && typeof looks === 'object' ? looks[model] : null;
+    return { ...(s.look || DEFAULT_LOOK), ...cleanLook(values), ...cleanLook(own) };
+  }
+
+  // Takes lights for a client and gives them its look. `looks` holds settings
+  // per model ({ modelKey: values }). Returns busy lights.
+  take(client, names, values, looks) {
     const busy = [];
     for (const name of names) {
       const s = this.state.get(name);
@@ -71,7 +87,7 @@ class Rig {
       if (s.owner && s.owner !== client) { busy.push({ name, owner: s.owner }); continue; }
       s.owner = client;
       s.selected = true;
-      s.look = { ...(s.look || DEFAULT_LOOK), ...cleanLook(values) };
+      s.look = this.lookFor(name, s, values, looks);
     }
     return busy;
   }
@@ -86,16 +102,18 @@ class Rig {
     }
   }
 
-  // Applies settings to every light the client has selected or soloed.
-  set(client, values) {
+  // Applies settings to every light the client has selected or soloed, or
+  // only to those of one model.
+  set(client, values, model) {
     const look = cleanLook(values);
-    for (const s of this.state.values()) {
+    for (const [name, s] of this.state) {
+      if (model && this.byName.get(name).model !== model) continue;
       if (s.owner === client && (s.selected || s.solo)) s.look = { ...(s.look || DEFAULT_LOOK), ...look };
     }
   }
 
   // Solos one light for a client (null ends solo). Returns busy info or null.
-  solo(client, name, values) {
+  solo(client, name, values, looks) {
     const s = name == null ? null : this.state.get(name);
     if (s && s.owner && s.owner !== client) return { name, owner: s.owner };
     for (const [n, other] of this.state) {
@@ -104,7 +122,7 @@ class Rig {
     if (s) {
       s.owner = client;
       s.solo = true;
-      s.look = { ...(s.look || DEFAULT_LOOK), ...cleanLook(values) };
+      s.look = this.lookFor(name, s, values, looks);
     }
     return null;
   }
@@ -194,7 +212,7 @@ class Rig {
 
       // A soloed light flashes open white with a wide beam; pan/tilt as set.
       const look = s.solo
-        ? { ...s.look, dimmer: flashOn ? 255 : 0, beam: 255, colorMacro: T.colorMacroWhite ?? 0, gobo: 0, frost: 0 }
+        ? { ...s.look, dimmer: flashOn ? 255 : 0, beam: 255, colorMacro: T.colorMacroWhite ?? 0, ...WHITE, gobo: 0, frost: 0 }
         : s.look;
       const put16 = (hi, lo, v01) => {
         const v = Math.round(Math.min(1, Math.max(0, v01)) * 65535);
@@ -207,6 +225,7 @@ class Rig {
       if (T.shutterOpen != null) setCh(at(c.shutter), T.shutterOpen);
       setCh(at(c.zoom), T.zoomZeroIsWide ? 255 - look.beam : look.beam);
       setCh(at(c.colorMacro), look.colorMacro);
+      for (const [role, v] of Object.entries(colourValues(T, look))) setCh(at(c[role]), v);
       if (T.gobo) setCh(at(c.goboWheel), goboWheelValue(T.gobo, look));
       if (T.goboRotation) setCh(at(c.goboRot), goboRotValue(T.goboRotation, look));
       setCh(at(c.focus), look.focus);

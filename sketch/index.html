@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Light control</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <script src="vendor/p5.min.js"></script>
+  <script src="colour.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -43,7 +44,8 @@
 
     <section class="stage">
       <div id="pad-holder"></div>
-      <p class="hint">Drag to aim. Left–right is pan, up–down is tilt.</p>
+      <p class="hint">Drag to aim your ticked lights that can move. Left–right is pan, up–down is tilt.</p>
+      <label class="check"><input type="checkbox" id="sweep"> Sweep in a slow circle</label>
     </section>
 
     <section class="controls">
@@ -75,46 +77,8 @@
         <p class="small">The soloed light flashes white; every other moving light is dark. Click a light's name below, or use ↑ and ↓, to pick another.</p>
       </fieldset>
 
-      <div id="groups" class="controls"></div>
-
-      <label class="slider">Dimmer
-        <input type="range" id="dimmer" min="0" max="255" value="0"><output id="dimmer-out">0</output>
-      </label>
-      <label class="slider">Beam
-        <input type="range" id="beam" min="0" max="255" value="128"><output id="beam-out">128</output>
-      </label>
-      <label class="check"><input type="checkbox" id="sweep"> Sweep in a slow circle</label>
-
-      <fieldset id="panel-color">
-        <legend>Colour macro</legend>
-        <label class="slider">Macro
-          <input type="range" id="color" min="0" max="255" value="0"><output id="color-out">0</output>
-        </label>
-        <p class="small">Steps through the light's built-in colours. The manual lists which value gives which colour.</p>
-      </fieldset>
-
-      <fieldset id="panel-gobo">
-        <legend>Gobos, focus and frost</legend>
-        <label class="slider">Gobo
-          <select id="gobo">
-            <option value="0">Open (no gobo)</option>
-          </select>
-        </label>
-        <div class="row">
-          <label class="check"><input type="radio" name="gobo-mode" value="index" checked> Fixed angle</label>
-          <label class="check"><input type="radio" name="gobo-mode" value="spin"> Spin</label>
-        </div>
-        <label class="slider"><span id="gobo-move-label">Angle</span>
-          <input type="range" id="gobo-move" min="0" max="360" value="0"><output id="gobo-move-out">0°</output>
-        </label>
-        <label class="slider">Focus
-          <input type="range" id="focus" min="0" max="255" value="128"><output id="focus-out">128</output>
-        </label>
-        <label class="slider">Frost
-          <input type="range" id="frost" min="0" max="255" value="0"><output id="frost-out">0</output>
-        </label>
-        <p class="small">Spin: negative is backwards, positive forwards, 0 stops. Adjust focus for a sharp image.</p>
-      </fieldset>
+      <p class="small">Each kind of light has its own controls below, and only shows what that kind can do. Controls are greyed out until you tick a light of that kind.</p>
+      <div id="types"></div>
 
       <fieldset>
         <legend>Channel finder</legend>
@@ -139,6 +103,7 @@
     </section>
   </main>
   <script src="map.js"></script>
+  <script src="types.js"></script>
   <script src="sketch.js"></script>
 </body>
 </html>
