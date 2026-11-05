@@ -96,7 +96,7 @@ const server = http.createServer((req, res) => {
 
 // ---------- Clients ----------
 const wss = new WebSocketServer({ server });
-// ws -> { id, address, canEdit, lastHeard, hostName, typedName, connectedAt, last, lastValues }
+// ws -> { id, address, canEdit, lastHeard, hostName, typedName, connectedAt, last, lastValues (per model) }
 const clients = new Map();
 let nextClientId = 1;
 
@@ -222,26 +222,33 @@ wss.on('connection', (ws, req) => {
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
     const names = Array.isArray(msg.lights) ? msg.lights.filter((n) => typeof n === 'string') : [];
+    // Settings can be for one model only, e.g. { type: 'set', model: 'wash7', values }.
+    const model = typeof msg.model === 'string' && config.models[msg.model] ? msg.model : null;
 
     // Remember what it sent, for the device list.
-    const mine = Object.values(rig.owners()).filter((o) => o.owner === client.id && (o.selected || o.solo)).length;
+    const mine = Object.entries(rig.owners())
+      .filter(([name, o]) => o.owner === client.id && (o.selected || o.solo) && (!model || rig.byName.get(name).model === model)).length;
     const text = String(raw);
     client.last = {
-      summary: summarize(msg, client.lastValues, mine),
+      summary: summarize(msg, (client.lastValues || {})[model || '*'], mine, model && config.models[model].label),
       raw: text.length > 600 ? `${text.slice(0, 600)}…` : text,
       at: Date.now(),
     };
-    if (msg.type === 'set' && msg.values) client.lastValues = { ...client.lastValues, ...msg.values };
+    // Last values per model ('*' = all lights), so summaries list only what changed.
+    if (msg.type === 'set' && msg.values) {
+      const key = model || '*';
+      client.lastValues = { ...client.lastValues, [key]: { ...(client.lastValues || {})[key], ...msg.values } };
+    }
 
     if (msg.type === 'take') {
-      const busy = rig.take(client.id, names, msg.values);
+      const busy = rig.take(client.id, names, msg.values, msg.looks);
       if (busy.length) refuse(ws, busy, 'take');
     } else if (msg.type === 'release') {
       rig.release(client.id, names);
     } else if (msg.type === 'set') {
-      rig.set(client.id, msg.values);
+      rig.set(client.id, msg.values, model);
     } else if (msg.type === 'solo') {
-      const busy = rig.solo(client.id, typeof msg.light === 'string' ? msg.light : null, msg.values);
+      const busy = rig.solo(client.id, typeof msg.light === 'string' ? msg.light : null, msg.values, msg.looks);
       if (busy) refuse(ws, [busy], 'solo');
     } else if (msg.type === 'raw' && typeof msg.key === 'string') {
       const busy = rig.setRaw(client.id, msg.key, msg.value);

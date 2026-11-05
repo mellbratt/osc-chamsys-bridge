@@ -39,21 +39,15 @@ function applyConfig(cfg) {
 // =====================================================================
 
 let ws, connected = false;
+// Pan and tilt are shared by all your lights (one pad); everything else is
+// set per kind of light, in typeLooks (types.js).
 const state = {
-  pan: 0.5, tilt: 0.5, dimmer: 0, sweep: false,
-  beam: 128,        // 0 = narrowest, 255 = widest (both types)
-  washColor: 0,     // colour macro, 0 = open white on the Wash 7
-  gobo: 0,          // 0 = open, 1-7 = gobo slot
-  goboMode: 'index',// 'index' = fixed angle, 'spin' = continuous rotation
-  goboAngle: 0,     // degrees, index mode
-  goboSpin: 0,      // -100..100, spin mode
-  focus: 128,
-  frost: 0,
+  pan: 0.5, tilt: 0.5, sweep: false,
   selected: new Set(), // lights this page has taken; starts empty (watching only)
   solo: null,          // index of the soloed light, or null when solo mode is off
   raw: new Map(),      // "universe:channel" -> value
 };
-let lastSentLook = '', lastSendMs = 0, dragging = false;
+let lastSent = {}, lastSendMs = 0, dragging = false; // model -> last values sent
 let displayOrder = []; // light indexes in the order the list shows them
 
 function setup() {
@@ -86,25 +80,31 @@ function draw() {
 
 // ---------- What this page asks the bridge for ----------
 
-// The settings from the controls, in the bridge's units.
-function look() {
-  return {
-    pan: state.pan, tilt: state.tilt, dimmer: state.dimmer, beam: state.beam, colorMacro: state.washColor,
-    gobo: state.gobo, goboMode: state.goboMode, goboAngle: state.goboAngle, goboSpin: state.goboSpin,
-    focus: state.focus, frost: state.frost,
-  };
+// The settings for one kind of light, in the bridge's units: the shared pan
+// and tilt plus that kind's own controls.
+function look(model) {
+  return { pan: state.pan, tilt: state.tilt, ...typeLooks[model] };
+}
+// Settings for the given lights' kinds: { model: values }.
+function looksFor(indexes) {
+  const models = new Set(indexes.map((i) => FIXTURES[i].model));
+  return Object.fromEntries([...models].map((m) => [m, look(m)]));
 }
 
-// Sends the controls' settings for this page's lights, at most 30 times a
-// second and only when they change. Nothing is sent while the page only watches.
+// Sends each kind's settings for this page's lights of that kind, at most 30
+// times a second and only when they change. Nothing is sent while the page
+// only watches.
 function pushLook() {
   if (!FIXTURES.length || (!state.selected.size && state.solo == null)) return;
   const now = millis();
   if (now - lastSendMs < 33) return;
-  const values = look(), key = JSON.stringify(values);
-  if (key === lastSentLook) return;
-  lastSentLook = key; lastSendMs = now;
-  send({ type: 'set', values });
+  for (const model of TYPE_KEYS) {
+    if (!myLightsOf(model).length) continue;
+    const values = look(model), key = JSON.stringify(values);
+    if (key === lastSent[model]) continue;
+    lastSent[model] = key; lastSendMs = now;
+    send({ type: 'set', model, values });
+  }
 }
 
 // Who has a light, if it's someone else: their name or address, or null.
@@ -122,7 +122,7 @@ function take(indexes) {
   indexes.filter((i) => otherOwner(i)).slice(0, 1).forEach(busyNote);
   if (!free.length) return;
   free.forEach((i) => state.selected.add(i));
-  send({ type: 'take', lights: free.map((i) => FIXTURES[i].name), values: look() });
+  send({ type: 'take', lights: free.map((i) => FIXTURES[i].name), values: { pan: state.pan, tilt: state.tilt }, looks: looksFor(free) });
 }
 function letGo(indexes) {
   indexes.forEach((i) => state.selected.delete(i));
@@ -131,8 +131,9 @@ function letGo(indexes) {
 
 // After reconnecting (e.g. a phone waking up), ask for the same lights again.
 function retake() {
-  if (state.selected.size) send({ type: 'take', lights: [...state.selected].map((i) => FIXTURES[i].name), values: look() });
-  if (state.solo != null) send({ type: 'solo', light: FIXTURES[state.solo].name, values: look() });
+  const mine = [...state.selected];
+  if (mine.length) send({ type: 'take', lights: mine.map((i) => FIXTURES[i].name), values: { pan: state.pan, tilt: state.tilt }, looks: looksFor(mine) });
+  if (state.solo != null) send({ type: 'solo', light: FIXTURES[state.solo].name, values: { pan: state.pan, tilt: state.tilt }, looks: looksFor([state.solo]) });
   state.raw.forEach((value, key) => send({ type: 'raw', key, value }));
 }
 
@@ -250,8 +251,9 @@ function drawPad() {
     line(0, (height * i) / 8, width, (height * i) / 8);
   }
   const x = state.pan * width, y = state.tilt * height;
-  const glow = map(state.dimmer, 0, 255, 0, 1);
-  const spread = map(state.beam, 0, 255, 0.5, 1.6);
+  const mine = TYPE_KEYS.filter((m) => myLightsOf(m).length).map((m) => typeLooks[m]);
+  const glow = map(Math.max(0, ...mine.map((l) => l.dimmer)), 0, 255, 0, 1);
+  const spread = map(Math.max(0, ...mine.map((l) => l.beam)), 0, 255, 0.5, 1.6);
   noStroke();
   for (let r = 6; r > 0; r--) {
     fill(242, 176, 74, 30 * glow);
@@ -260,14 +262,13 @@ function drawPad() {
   fill(242, 176, 74); circle(x, y, 14);
   fill(154, 163, 179); textSize(12);
   if (state.solo != null) text(`Solo: ${FIXTURES[state.solo].name}`, 10, 20);
-  const g = state.gobo ? `  gobo ${state.gobo}` : '';
-  text(`pan ${(state.pan * 100).toFixed(0)}%  tilt ${(state.tilt * 100).toFixed(0)}%${g}`, 10, height - 10);
+  text(`pan ${(state.pan * 100).toFixed(0)}%  tilt ${(state.tilt * 100).toFixed(0)}%`, 10, height - 10);
 }
 
 // ---------- Bridge connection ----------
 function connect() {
   ws = new WebSocket(`ws://${location.host}`);
-  ws.onopen = () => { connected = true; lastSentLook = ''; updateStatus(); };
+  ws.onopen = () => { connected = true; lastSent = {}; updateStatus(); };
   ws.onclose = () => { connected = false; updateStatus(); setTimeout(connect, 1500); };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
@@ -310,51 +311,8 @@ function buildUi() {
     send({ type: 'name', name });
   };
 
-  // Light checkboxes, one group per model
-  for (const [key, T] of Object.entries(MODELS)) {
-    if (!FIXTURES.some((f) => f.model === key)) continue;
-    const set = document.createElement('fieldset');
-    set.innerHTML = '<legend></legend><div class="group"></div><div class="row">'
-      + '<button class="quiet" data-mode="all">All</button><button class="quiet" data-mode="none">None</button></div>';
-    set.querySelector('legend').textContent = T.label;
-    const box = set.querySelector('.group');
-    FIXTURES.forEach((f, i) => {
-      if (f.model !== key) return;
-      const lab = document.createElement('label');
-      lab.innerHTML = `<input type="checkbox" data-i="${i}"> <span></span> <span class="small"></span> <span class="small owner"></span>`;
-      lab.querySelectorAll('span')[0].textContent = f.name;
-      lab.querySelectorAll('span')[1].textContent = `${f.universe}-${String(f.address).padStart(3, '0')}`;
-      lab.dataset.i = i;
-      lab.querySelector('input').onchange = (e) => {
-        if (e.target.checked) take([i]); else letGo([i]);
-        syncSelectedBoxes();
-      };
-      // In solo mode, clicking a light's name solos it instead of ticking it.
-      lab.onclick = (e) => {
-        if (state.solo == null) return;
-        e.preventDefault();
-        setSolo(i);
-      };
-      displayOrder.push(i);
-      box.appendChild(lab);
-    });
-    set.querySelectorAll('[data-mode]').forEach((btn) => {
-      btn.onclick = () => {
-        const mine = FIXTURES.map((f, i) => i).filter((i) => FIXTURES[i].model === key);
-        if (btn.dataset.mode === 'all') take(mine.filter((i) => !state.selected.has(i)));
-        else letGo(mine.filter((i) => state.selected.has(i)));
-        syncSelectedBoxes();
-      };
-    });
-    el('groups').appendChild(set);
-  }
-
-  // Show the colour and gobo panels only if some light has those channels.
-  const models = FIXTURES.map((f) => MODELS[f.model]);
-  el('panel-color').hidden = !models.some((T) => T.ch.colorMacro != null);
-  const goboSlots = Math.max(0, ...models.map((T) => (T.gobo ? T.gobo.slots : 0)));
-  el('panel-gobo').hidden = !models.some((T) => T.ch.goboWheel != null || T.ch.focus != null || T.ch.frost != null);
-  for (let g = 1; g <= goboSlots; g++) el('gobo').add(new Option(`Gobo ${g}`, g));
+  // One section per kind of light: its lights and its own controls (types.js).
+  buildTypes();
 
   // Channel finder: universes from the config, starting at the first light's dimmer.
   UNIVERSES.forEach((u) => el('raw-uni').add(new Option(u, u)));
@@ -362,28 +320,11 @@ function buildUi() {
   el('raw-uni').value = first.universe;
   el('raw-ch').value = first.address + (firstDimmer ?? 0);
 
-  bindSlider('dimmer', (v) => (state.dimmer = v));
-  bindSlider('beam', (v) => (state.beam = v));
-  bindSlider('color', (v) => (state.washColor = v));
-  bindSlider('focus', (v) => (state.focus = v));
-  bindSlider('frost', (v) => (state.frost = v));
   el('sweep').onchange = (e) => (state.sweep = e.target.checked);
-
-  // Gobo controls
-  el('gobo').onchange = (e) => (state.gobo = +e.target.value);
-  document.querySelectorAll('input[name=gobo-mode]').forEach((r) => {
-    r.onchange = () => { state.goboMode = r.value; configureGoboSlider(); };
-  });
-  el('gobo-move').oninput = (e) => {
-    const v = +e.target.value;
-    if (state.goboMode === 'index') state.goboAngle = v; else state.goboSpin = v;
-    el('gobo-move-out').textContent = state.goboMode === 'index' ? `${v}°` : v;
-  };
-  configureGoboSlider();
 
   el('toggle-send').onclick = () => send({ type: 'console', control: !inControl });
   el('blackout').onclick = () => {
-    state.dimmer = 0; el('dimmer').value = 0; el('dimmer-out').textContent = 0;
+    blackoutTypes();
     state.raw.clear(); renderRaw();
     send({ type: 'raw-clear' });
     if (state.solo != null) setSolo(null);
@@ -455,6 +396,7 @@ function toggleSelected(i) {
 }
 function syncSelectedBoxes() {
   document.querySelectorAll('input[data-i]').forEach((cb) => (cb.checked = state.selected.has(+cb.dataset.i)));
+  updateTypeSections();
   renderMap(true);
 }
 
@@ -473,7 +415,7 @@ function renderOwners() {
 function setSolo(i) {
   if (i != null && otherOwner(i)) return busyNote(i);
   showSolo(i);
-  send({ type: 'solo', light: i == null ? null : FIXTURES[i].name, values: look() });
+  send({ type: 'solo', light: i == null ? null : FIXTURES[i].name, values: { pan: state.pan, tilt: state.tilt }, looks: i == null ? {} : looksFor([i]) });
 }
 
 function showSolo(i) {
@@ -485,6 +427,7 @@ function showSolo(i) {
   });
   updateSoloId();
   updatePeek();
+  updateTypeSections();
   renderMap(true);
 }
 
@@ -498,22 +441,6 @@ function updateSoloId() {
   el('solo-note').textContent = inControl ? '' : 'The lights are released to the console, so it isn\'t flashing.';
 }
 
-function configureGoboSlider() {
-  const s = el('gobo-move'), label = el('gobo-move-label');
-  if (state.goboMode === 'index') {
-    s.min = 0; s.max = 360; s.value = state.goboAngle;
-    label.textContent = 'Angle';
-    el('gobo-move-out').textContent = `${state.goboAngle}°`;
-  } else {
-    s.min = -100; s.max = 100; s.value = state.goboSpin;
-    label.textContent = 'Spin';
-    el('gobo-move-out').textContent = state.goboSpin;
-  }
-}
-
-function bindSlider(id, fn) {
-  el(id).oninput = (e) => { const v = +e.target.value; el(id + '-out').textContent = v; fn(v); };
-}
 
 function renderRaw() {
   el('raw-list').textContent = state.raw.size

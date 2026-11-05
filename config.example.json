@@ -3,11 +3,11 @@
   "models": {
     "wash7": {
       "label": "Jet Wash 7",
-      "source": "Prolights Jet Wash7 user manual, rev. 04/22, Standard mode",
+      "source": "Prolights Jet Wash7 DMX chart (Jetwash7_DMX_CHARTS.pdf), Standard mode; pan/tilt range from the Jet Wash7 datasheet",
       "symbol": "circle",
       "channelCount": 23,
-      "panDegrees": null,
-      "tiltDegrees": null,
+      "panDegrees": 540,
+      "tiltDegrees": 233,
       "channels": {
         "pan": 1,
         "panFine": 2,
@@ -21,9 +21,11 @@
         "red": 11,
         "green": 13,
         "blue": 15,
-        "white": 17
+        "white": 17,
+        "cct": 8,
+        "crossfade": 10
       },
-      "labels": { "9": "tint", "10": "crossfade" },
+      "labels": { "9": "tint" },
       "shutterOpen": 255,
       "zoomZeroIsWide": true,
       "defaults": {
@@ -43,15 +45,16 @@
         "18": 255,
         "21": 128,
         "22": 128
-      }
+      },
+      "cctRange": [2800, 10000]
     },
     "profile300": {
       "label": "Jet Profile300LT",
-      "source": "Prolights Jet Profile300LT user manual, rev. 25/Nov/25, Standard mode; pan/tilt range from the Prolights spec sheet",
+      "source": "Prolights Jet Profile300LT DMX chart (Jetprofile300lt_DMX_CHARTS.pdf), Standard mode (38 ch)",
       "symbol": "triangle",
       "channelCount": 38,
       "panDegrees": 540,
-      "tiltDegrees": 265,
+      "tiltDegrees": 260,
       "channels": {
         "pan": 1,
         "panFine": 2,
@@ -64,7 +67,11 @@
         "frost": 21,
         "zoom": 22,
         "focus": 24,
-        "control": 38
+        "control": 38,
+        "cyan": 8,
+        "magenta": 9,
+        "yellow": 10,
+        "cto": 11
       },
       "labels": {},
       "shutterOpen": 255,
@@ -76,7 +83,54 @@
         "forwardRange": [127, 1],
         "backwardRange": [129, 255]
       },
-      "defaults": { "1": 128, "3": 128, "22": 128, "24": 128, "29": 128, "31": 128, "33": 128, "35": 128, "36": 128 }
+      "defaults": { "1": 128, "3": 128, "22": 128, "24": 128, "29": 128, "31": 128, "33": 128, "35": 128, "36": 128 },
+      "ctoRange": [2800, 6500]
+    },
+    "eclpar": {
+      "label": "EclPar IPMFC",
+      "source": "Prolights EclPar IPMFC DMX chart (Eclparipmfc_DMX_CHARTS.pdf), Standard mode (9 ch)",
+      "symbol": "square",
+      "channelCount": 9,
+      "panDegrees": null,
+      "tiltDegrees": null,
+      "channels": {
+        "dimmer": 1,
+        "dimmerFine": 2,
+        "red": 3,
+        "green": 4,
+        "blue": 5,
+        "white": 6,
+        "colorMacro": 7,
+        "shutter": 8,
+        "control": 9
+      },
+      "labels": {},
+      "shutterOpen": 255,
+      "defaults": { "3": 255, "4": 255, "5": 255, "6": 255, "8": 255 }
+    },
+    "fresnel": {
+      "label": "EclFresnel CT+M",
+      "source": "Prolights EclFresnel CT+ S/M/L DMX chart (Eclfrctps_DMX_CHARTS.pdf), Standard mode (11 ch)",
+      "symbol": "diamond",
+      "channelCount": 11,
+      "panDegrees": null,
+      "tiltDegrees": null,
+      "channels": {
+        "dimmer": 1,
+        "dimmerFine": 2,
+        "red": 7,
+        "green": 8,
+        "blue": 9,
+        "shutter": 10,
+        "control": 11,
+        "cct": 3,
+        "cctFine": 4,
+        "crossfade": 6
+      },
+      "labels": { "5": "green-magenta" },
+      "shutterOpen": 0,
+      "defaults": { "5": 128, "7": 255, "8": 255, "9": 255 },
+      "cctRange": [2800, 10000]
     }
   },
   "lights": [
