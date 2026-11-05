@@ -7,6 +7,9 @@ const fs = require('fs');
 const path = require('path');
 
 const SYMBOLS = ['circle', 'square', 'triangle', 'diamond'];
+// Words OSC already uses for sets of lights, so a model's group can't be one.
+const OSC_WORDS = ['all', 'mine', 'moving'];
+const OSC_DEFAULTS = { port: 8000, replyPort: 9000 };
 
 function loadConfig(file) {
   if (!fs.existsSync(file)) {
@@ -22,6 +25,7 @@ function loadConfig(file) {
   const problems = check(cfg);
   if (problems.length) fail(`Problems in ${file}:\n- ${problems.join('\n- ')}`);
   cfg.map = normalizeMap(cfg.map);
+  cfg.osc = { ...OSC_DEFAULTS, ...cfg.osc };
   const names = new Set(cfg.lights.map((l) => l.name));
   for (const name of Object.keys(cfg.map.lights)) {
     if (!names.has(name)) console.warn(`Note: the map has a position for "${name}", which isn't in lights. It is ignored.`);
@@ -150,6 +154,9 @@ function check(cfg) {
     for (const k of ['panDegrees', 'tiltDegrees']) {
       if (m[k] != null && !(typeof m[k] === 'number' && m[k] > 0 && m[k] <= 720)) p.push(`${where}.${k} must be a number of degrees, or null if unknown.`);
     }
+    if (m.group != null && !(typeof m.group === 'string' && /^[a-z][a-z0-9-]*$/i.test(m.group) && !OSC_WORDS.includes(m.group.toLowerCase()))) {
+      p.push(`${where}.group must be one word starting with a letter, e.g. "wash", and not ${OSC_WORDS.join(', ')}.`);
+    }
     if (m.symbol != null && !SYMBOLS.includes(m.symbol)) p.push(`${where}.symbol must be one of ${SYMBOLS.join(', ')}.`);
     for (const k of ['cctRange', 'ctoRange']) {
       const r = m[k];
@@ -188,6 +195,11 @@ function check(cfg) {
     }
   }
   if (cfg.map != null) p.push(...checkMap(cfg.map));
+  if (cfg.osc != null && (typeof cfg.osc !== 'object' || Array.isArray(cfg.osc))) p.push('osc must be an object, e.g. { "port": 8000, "replyPort": 9000 }.');
+  for (const k of Object.keys(OSC_DEFAULTS)) {
+    const v = cfg.osc && cfg.osc[k];
+    if (v != null && !(isInt(v) && v >= 1 && v <= 65535)) p.push(`osc.${k} must be a port number from 1 to 65535.`);
+  }
   return p;
 }
 

@@ -205,7 +205,7 @@ function renderDevices() {
     head.appendChild(name);
     const addr = document.createElement('span');
     addr.className = 'small';
-    addr.textContent = [c.typedName && c.hostName, c.address, id === myId && '(this page)'].filter(Boolean).join(' · ');
+    addr.textContent = [c.typedName && c.hostName, c.address, c.osc && 'OSC', id === myId && '(this page)'].filter(Boolean).join(' · ');
     head.appendChild(addr);
     const lights = Object.entries(owners).filter(([, o]) => o.owner === id).map(([n]) => n);
     if (canEdit && id !== myId && lights.length) {
@@ -461,10 +461,19 @@ function updateStatus(s) {
     out.textContent = 'Released to the console: the console runs the lights.';
   }
   if (s && s.lastError) out.textContent += `  Error: ${s.lastError}`;
+  if (s && s.osc) showOscAddress(s.osc);
   btn.hidden = !canEdit;
   btn.textContent = inControl ? 'Release to console' : 'Take back from console';
   btn.classList.toggle('live', inControl);
   if (FIXTURES.length) updateSoloId();
+}
+
+// Where students' own code should send OSC: this computer's addresses.
+function showOscAddress(o) {
+  const ips = o.addresses.length ? o.addresses : [location.hostname];
+  el('osc-where').textContent = o.listening
+    ? `Your own code can send OSC to ${ips.join(' or ')}, port ${o.port} (UDP), or from a browser to ws://${ips[0]}:${o.httpPort}/osc. Replies come back on port ${o.replyPort}.`
+    : `OSC input is off: port ${o.port} is in use by another program on this computer.`;
 }
 
 // Shows the named channels of the soloed or first ticked light, as sent.
