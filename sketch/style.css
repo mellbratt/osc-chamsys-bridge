@@ -5,6 +5,7 @@
   --dim: #9aa3b3;
   --tungsten: #f2b04a;   /* warm lamp light */
   --stop: #e0604f;
+  --select: #7cc4ff;     /* picked lights on the map */
 }
 * { box-sizing: border-box; }
 body {
@@ -60,15 +61,24 @@ line.map-shape { stroke-width: 0.12; stroke-linecap: round; }
 .map-shape.picked { stroke: var(--tungsten); }
 .map-shape.drawing { stroke: var(--tungsten); stroke-dasharray: 0.2 0.15; }
 .map-light { cursor: pointer; }
-.map-symbol { fill: var(--panel); stroke: var(--ink); stroke-width: 0.05; }
-.map-ring { fill: none; stroke: var(--tungsten); stroke-width: 0.07; }
+.map-symbol { fill: #1b2130; stroke: var(--dim); stroke-width: 0.05; }
+.map-light.on .map-symbol { stroke: var(--ink); }
+.map-glow { pointer-events: none; }
+.map-preset { fill: none; stroke-width: 0.08; }
+.map-ring { fill: none; stroke: var(--select); stroke-width: 0.07; }
 .map-light.picked .map-ring { stroke-dasharray: 0.15 0.1; }
 .map-light.soloed .map-ring { stroke-width: 0.12; animation: solo-pulse 0.5s steps(2) infinite; }
 @keyframes solo-pulse { 50% { stroke-opacity: 0.2; } }
-.map-aim { stroke: var(--tungsten); stroke-width: 0.07; stroke-linecap: round; }
+.map-aim { stroke-width: 0.08; stroke-linecap: round; pointer-events: none; }
+.map-aim.head { stroke-width: 0.02; stroke-linejoin: round; }
+.map-aim.dark { stroke: var(--dim); fill: var(--dim); opacity: 0.7; }
 .map-facing { stroke: var(--dim); stroke-width: 0.05; }
-.map-name { font-size: 0.3px; fill: var(--ink); text-anchor: middle; pointer-events: none; }
-.map-addr { font-size: 0.24px; fill: var(--dim); text-anchor: middle; pointer-events: none; }
+.map-name { font-size: 0.3px; font-weight: 600; fill: var(--ink); pointer-events: none;
+  paint-order: stroke; stroke: #1b2130; stroke-width: 0.08px; stroke-linejoin: round; }
+.map-light.off .map-name { fill: var(--dim); }
+#map-legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; margin: 0.5rem 0; }
+.legend-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+.legend-icon { width: 1.1rem; height: 1.1rem; overflow: visible; }
 #map.editing[data-tool=rect], #map.editing[data-tool=line], #map.editing[data-tool=place] { cursor: crosshair; }
 #map-tools, #map-edit-tools { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
 #map-tools[hidden], #map-edit-tools[hidden], #map-picked[hidden], #map-light-tools[hidden] { display: none; }

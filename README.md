@@ -18,7 +18,20 @@ browser (p5.js page) --WebSocket--> bridge.js --Art-Net (UDP 6454)--> ChamSys Qu
 - **The console** uses hot takeover: when it receives Art-Net on a universe that allows external control, it stops outputting its own values and passes the incoming ones to its DMX outputs.
   - When the bridge stops sending (**Release to console**, or the bridge is stopped), the console takes the universe back after a few seconds.
 
-Tested against the console: Art-Net takeover of universe 1. Not yet tested against the console: the Jet Wash 7 and Profile300LT channel layouts in `config.example.json`, which are taken from the Prolights user manuals.
+### Tested on the console
+
+Tested on a ChamSys QuickQ 30 with Jet Wash 7, Jet Profile300LT, EclPar IPMFC and EclFresnel CT+M lights:
+
+| Works | Doesn't work yet |
+|---|---|
+| Taking over universes 1 and 2 | **Colour.** The page's colour control sets the colour-preset channel, which hasn't changed the light's colour in tests. The cause isn't known yet. The Profile300LT's CMY and colour wheels and the Fresnel's colour channels have no control on the page yet. |
+| Dimmer | |
+| Pan and tilt, including Sweep | |
+| Beam (zoom) | |
+| Gobos: choosing, fixed angle and spinning | |
+| Focus | |
+
+Not tested yet: frost, solo mode, several people at once, and the map's live view. The channel layouts come from the Prolights user manuals.
 
 ## What it is intended to do
 
@@ -110,9 +123,11 @@ Anyone on the network can open the page, e.g. on a phone, at `http://<bridge-com
 
 The map at the top of the page shows the room from above, with every light that has been placed on it.
 
-- **Each light** shows its name, console address and a symbol for its model.
-  - While the bridge controls the lights, each light glows in its current brightness and colour, and an arrow shows where it points.
-  - Your lights are ringed, and the soloed light's ring flashes. Lights someone else is controlling have a dashed outline; hover over one to see who.
+- **Each light** shows a symbol for its model and the number from its name, placed where it doesn't cover another light, label or line. Hover over a light for its full name, console address, brightness and colour preset. A key under the map lists the symbols.
+  - While the bridge controls the lights, a light that's on is filled with its colour, brighter when its dimmer is higher. A light that's off is hollow.
+  - A ring of three colours means a colour preset is set; the map doesn't know which colour the preset gives.
+  - An arrow from the light shows where it points, longer the further it tilts. No arrow means straight down.
+  - Your lights have a blue ring, and the soloed light's ring flashes. Lights someone else is controlling have a dashed outline; hover over one to see who.
 - **Clicking a light** adds or removes it from the lights the controls affect, like ticking it in the list. In solo mode, clicking a light solos it.
 
 **Editing the map** is only possible on the bridge computer, at http://localhost:8080. Other devices see the map but can't change it. Tick **Edit map**, then:
@@ -206,5 +221,7 @@ When the map is saved, the bridge rewrites the config file. It keeps everything 
   - The "Allow other consoles…" setting.
   - The subnet.
   - The macOS Local Network permission.
+- **Only the dimmer works; movement, gobos and focus don't:** another console or controller on the network may still have control of the console's universes, for example one that runs the touch panels. On the test console, setting that device to release control to the console fixed it. To check whether the bridge reaches the lights at all, tick one light, leave the dimmer at 0 and turn on **Sweep**: only that light should move.
+- **Sweep makes a different light flicker:** the bridge is sending to the wrong universe. Check `console.artnetUniverseForUniverse1` against the Art-Net numbers in the console's DMX settings.
 - **The packet counter climbs but the console doesn't react:** the counter only shows that packets left the computer, not that the console received them.
 - **A head moves but stays dark:** the shutter channel is closed. The page opens it automatically for selected heads.
