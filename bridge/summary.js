@@ -51,4 +51,28 @@ function summarize(msg, previous, lightCount, modelLabel) {
   }
 }
 
-module.exports = { summarize };
+// The same for an OSC message, from what bridge/osc.js says it did. OSC
+// values are 0..1 (white in kelvin), so they're shown as sent.
+function summarizeOsc(r) {
+  const num = (v) => String(Math.round(v * 1000) / 1000);
+  switch (r.type) {
+    case 'set': {
+      const where = r.lights.length ? `on ${list(r.lights)}` : 'on no lights';
+      const busy = r.busy ? ` (${r.busy} controlled by others)` : '';
+      return `OSC: set ${r.what} ${r.values.map(num).join(' ')} ${where}${busy}`;
+    }
+    case 'release': return r.lights.length ? `OSC: let go of ${list(r.lights)}` : 'OSC: let go of no lights';
+    case 'release-all': return 'OSC: let go of all its lights';
+    case 'ping': return 'OSC: still here (/ping)';
+    case 'name': return r.name ? `OSC: named itself "${r.name}"` : 'OSC: cleared its name';
+    case 'reply': return `OSC: asked for replies on port ${r.port}`;
+    case 'info': return 'OSC: asked for the room info';
+    case 'ambient': return r.on ? 'OSC: runs the ambient lights (/ambient 1)' : 'OSC: stopped being ambient (/ambient 0)';
+    case 'ambient-off': return 'OSC: ambient light messages, ignored because ambient is switched off';
+    case 'unknown': return `OSC: unknown address ${String(r.address).slice(0, 60)}`;
+    case 'not-osc': return 'sent something that isn\'t OSC';
+    default: return `OSC: ${String(r.address || '').slice(0, 60)} was not understood (see the warning it was sent)`;
+  }
+}
+
+module.exports = { summarize, summarizeOsc };

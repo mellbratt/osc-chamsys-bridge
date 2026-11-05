@@ -1,8 +1,10 @@
 {
   "console": { "ip": "10.0.0.10", "artnetUniverseForUniverse1": 0 },
+  "osc": { "port": 8000, "replyPort": 9000 },
   "models": {
     "wash7": {
       "label": "Jet Wash 7",
+      "group": "wash",
       "source": "Prolights Jet Wash7 DMX chart (Jetwash7_DMX_CHARTS.pdf), Standard mode; pan/tilt range from the Jet Wash7 datasheet",
       "symbol": "circle",
       "channelCount": 23,
@@ -50,6 +52,7 @@
     },
     "profile300": {
       "label": "Jet Profile300LT",
+      "group": "profile",
       "source": "Prolights Jet Profile300LT DMX chart (Jetprofile300lt_DMX_CHARTS.pdf), Standard mode (38 ch)",
       "symbol": "triangle",
       "channelCount": 38,
@@ -88,6 +91,7 @@
     },
     "eclpar": {
       "label": "EclPar IPMFC",
+      "group": "par",
       "source": "Prolights EclPar IPMFC DMX chart (Eclparipmfc_DMX_CHARTS.pdf), Standard mode (9 ch)",
       "symbol": "square",
       "channelCount": 9,
@@ -110,6 +114,7 @@
     },
     "fresnel": {
       "label": "EclFresnel CT+M",
+      "group": "fresnel",
       "source": "Prolights EclFresnel CT+ S/M/L DMX chart (Eclfrctps_DMX_CHARTS.pdf), Standard mode (11 ch)",
       "symbol": "diamond",
       "channelCount": 11,
