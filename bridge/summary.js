@@ -47,6 +47,7 @@ function summarize(msg, previous, lightCount, modelLabel) {
     case 'map': return 'edited the map';
     case 'name': return msg.name ? `named itself "${String(msg.name).slice(0, 40)}"` : 'cleared its name';
     case 'free': return 'freed another device\'s lights';
+    case 'loaded': return 'opened the page';
     default: return `sent "${String(msg.type).slice(0, 20)}"`;
   }
 }
