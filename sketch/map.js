@@ -6,8 +6,10 @@
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MAP_SNAP = 0.1;       // metres: positions and shapes snap to this
-const ARROW_LENGTH = 1.5;   // metres: arrow length when a light points sideways
+const ARROW_LENGTH = 1.2;   // metres: arrow length when a light points sideways
 const SYMBOL_ORDER = ['circle', 'triangle', 'square', 'diamond'];
+const SYMBOL_R = 0.24;      // metres: symbol size
+const LABEL_SIZE = 0.3;     // metres: label text height
 
 const mapView = {
   map: null,
@@ -52,6 +54,7 @@ function initMap(map, canEdit) {
     if (p) { p.facing = normAngle(parseFloat(e.target.value) || 0); saveMap(); }
   };
   el('map-delete').onclick = deletePicked;
+  renderLegend();
   document.addEventListener('keydown', (e) => {
     if (!mapView.editing || (e.key !== 'Delete' && e.key !== 'Backspace')) return;
     if (e.target.matches('input, select, textarea')) return;
@@ -256,7 +259,10 @@ function liveLight(f) {
     const w = v(c.white) ?? 0;
     rgb = [v(c.red), v(c.green), v(c.blue)].map((x) => Math.min(255, x + w));
   }
-  return { level, rgb, pan: v16(c.pan, c.panFine), tilt: v16(c.tilt, c.tiltFine) };
+  // A colour preset (macro) is set. Its exact colour isn't known here, so
+  // the map marks it instead of guessing. 0-1 means "no preset".
+  const macro = c.colorMacro != null && v(c.colorMacro) > 1 ? v(c.colorMacro) : 0;
+  return { level, rgb, macro, pan: v16(c.pan, c.panFine), tilt: v16(c.tilt, c.tiltFine) };
 }
 
 // Arrow from the light to where it points, in metres, or null if unknown.
@@ -308,45 +314,52 @@ function renderMap(now) {
   }
 
   const unplaced = [];
-  const modelKeys = Object.keys(MODELS);
+  const labels = labelLayout();
+  // Two passes: arrows first, so no arrow is drawn over another light.
+  const lightsLayer = add(g, 'g', {}), aimLayer = add(g, 'g', {});
+  g.insertBefore(aimLayer, lightsLayer);
   FIXTURES.forEach((f, i) => {
     const pos = mapView.map.lights[f.name];
     if (!pos) { unplaced.push(f.name); return; }
-    const T = MODELS[f.model];
     const live = liveLight(f);
+    const on = !!live && live.level > 0;
+    const colour = live ? `rgb(${live.rgb.join(',')})` : null;
     const soloed = state.solo === i;
     const selected = state.solo == null && state.selected.has(i);
     const picked = mapView.picked && mapView.picked.kind === 'light' && mapView.picked.name === f.name;
     const who = otherOwner(i);
-    const cls = ['map-light', soloed && 'soloed', selected && 'selected', picked && 'picked', who && 'busy'].filter(Boolean).join(' ');
-    const lg = add(g, 'g', { class: cls, 'data-light': f.name, transform: `translate(${pos.x} ${pos.y})` });
-    add(lg, 'title', {}).textContent = who ? `${f.name}: being controlled by ${who}` : f.name;
+    const cls = ['map-light', on ? 'on' : 'off', soloed && 'soloed', selected && 'selected', picked && 'picked', who && 'busy']
+      .filter(Boolean).join(' ');
+    const lg = add(lightsLayer, 'g', { class: cls, 'data-light': f.name, transform: `translate(${pos.x} ${pos.y})` });
+    add(lg, 'title', {}).textContent = lightTooltip(f, live, who);
 
-    if (live && live.level > 0) {
-      const [r, gg, b] = live.rgb;
-      add(lg, 'circle', { r: 0.7, class: 'map-glow', fill: `rgb(${r},${gg},${b})`, 'fill-opacity': (0.15 + 0.6 * live.level).toFixed(2) });
-    }
+    // Where it points: an arrow from the edge of the symbol, in the light's colour.
     const aim = aimVector(f, pos, live);
-    if (aim) add(lg, 'line', { x1: 0, y1: 0, x2: aim.dx, y2: aim.dy, class: 'map-aim' });
+    if (aim && Math.hypot(aim.dx, aim.dy) > 0.15) drawArrow(aimLayer, pos, aim, on ? colour : null);
+
+    // On: a small glow and a symbol filled with its colour, brighter when brighter.
+    if (on) add(lg, 'circle', { r: 0.4, class: 'map-glow', fill: colour, 'fill-opacity': (0.2 + 0.4 * live.level).toFixed(2) });
+    if (soloed || selected || picked) add(lg, 'circle', { r: 0.47, class: 'map-ring' });
+    if (live && live.macro) drawPresetRing(lg);
     if (mapView.editing) {
       // Short tick showing which way the light's front faces.
       const fd = rad(pos.facing);
       add(lg, 'line', { x1: 0, y1: 0, x2: Math.sin(fd) * 0.45, y2: -Math.cos(fd) * 0.45, class: 'map-facing' });
     }
-    if (soloed || selected || picked) add(lg, 'circle', { r: 0.42, class: 'map-ring' });
-    const symbol = T.symbol || SYMBOL_ORDER[modelKeys.indexOf(f.model) % SYMBOL_ORDER.length];
-    drawSymbol(lg, symbol, 0.24);
-    const label = add(lg, 'text', { y: 0.68, class: 'map-name' });
-    label.textContent = f.name;
-    const addr = add(lg, 'text', { y: 1.02, class: 'map-addr' });
-    addr.textContent = `${f.universe}-${String(f.address).padStart(3, '0')}`;
+    const sym = drawSymbol(lg, symbolFor(f.model), SYMBOL_R);
+    if (on) sym.style.fill = shade(live.rgb, 0.35 + 0.65 * live.level);
+
+    const lab = labels.get(f.name);
+    const text = add(lg, 'text', { x: lab.x, y: lab.y, 'text-anchor': lab.anchor, class: 'map-name' });
+    text.textContent = lab.text;
   });
 
   // Text under the map
   const status = [];
   if (!mapView.output.sending) status.push('The console is in control, so the map shows no live brightness or direction.');
   if (unplaced.length) status.push(`Not on the map yet: ${unplaced.join(', ')}.`);
-  const noRange = [...new Set(FIXTURES.map((f) => MODELS[f.model]).filter((T) => !T.panDegrees || !T.tiltDegrees).map((T) => T.label))];
+  // Only lights that move need a direction arrow.
+  const noRange = [...new Set(FIXTURES.map((f) => MODELS[f.model]).filter((T) => T.ch.pan != null && (!T.panDegrees || !T.tiltDegrees)).map((T) => T.label))];
   if (noRange.length) status.push(`No direction arrow for ${noRange.join(', ')}: set panDegrees and tiltDegrees in the config.`);
   el('map-status').textContent = status.join(' ');
 
@@ -360,6 +373,156 @@ function renderMap(now) {
     if (p.kind === 'light' && document.activeElement !== el('map-facing')) el('map-facing').value = Math.round(pickedLightPos().facing);
   }
   el('map-place-hint').hidden = !(mapView.editing && mapView.tool === 'place');
+}
+
+function symbolFor(model) {
+  return MODELS[model].symbol || SYMBOL_ORDER[Object.keys(MODELS).indexOf(model) % SYMBOL_ORDER.length];
+}
+
+function lightTooltip(f, live, who) {
+  const lines = [`${f.name} (${MODELS[f.model].label}), ${f.universe}-${String(f.address).padStart(3, '0')}`];
+  if (who) lines.push(`Being controlled by ${who}`);
+  if (live) {
+    lines.push(live.level > 0 ? `On, ${Math.round(live.level * 100)}%` : 'Off');
+    if (live.macro) lines.push(`Colour preset ${live.macro}`);
+  }
+  return lines.join('\n');
+}
+
+// Arrow from the edge of the light's symbol to where it points.
+function drawArrow(parent, pos, aim, colour) {
+  const len = Math.hypot(aim.dx, aim.dy), ux = aim.dx / len, uy = aim.dy / len;
+  const start = SYMBOL_R + 0.12, head = 0.22;
+  const x1 = pos.x + ux * start, y1 = pos.y + uy * start;
+  const tx = pos.x + ux * (start + len), ty = pos.y + uy * (start + len);
+  const cls = colour ? 'map-aim' : 'map-aim dark';
+  const style = colour ? `stroke:${colour};fill:${colour}` : '';
+  add(parent, 'line', { x1, y1, x2: tx - ux * head * 0.8, y2: ty - uy * head * 0.8, class: cls, style });
+  const px = -uy * head * 0.55, py = ux * head * 0.55;
+  add(parent, 'polygon', {
+    points: `${tx},${ty} ${tx - ux * head + px},${ty - uy * head + py} ${tx - ux * head - px},${ty - uy * head - py}`,
+    class: `${cls} head`, style,
+  });
+}
+
+// A ring of three colours around the symbol: a colour preset is set.
+function drawPresetRing(parent) {
+  ['#e5484d', '#46a758', '#3e8ef7'].forEach((stroke, k) => {
+    add(parent, 'circle', { r: 0.31, class: 'map-preset', stroke, pathLength: 3, 'stroke-dasharray': '1 2', 'stroke-dashoffset': -k });
+  });
+}
+
+// A colour darkened towards the map background, for dim lights.
+function shade(rgb, k) {
+  const bg = [27, 33, 48];
+  return `rgb(${rgb.map((c, i) => Math.round(bg[i] + (c - bg[i]) * k)).join(',')})`;
+}
+
+// ---------- Labels ----------
+
+// Short label for each light: the number in its name when that's unique
+// (the symbol already shows the model), else the whole name.
+function shortLabels() {
+  const num = (name) => (name.match(/(\d+)\s*$/) || [])[1];
+  const counts = {};
+  FIXTURES.forEach((f) => { const n = num(f.name); if (n) counts[n] = (counts[n] || 0) + 1; });
+  return new Map(FIXTURES.map((f) => { const n = num(f.name); return [f.name, n && counts[n] === 1 ? n : f.name]; }));
+}
+
+// Places each label next to its light where it covers no other light, label
+// or line of the room. Recomputed only when the map changes, so labels don't
+// jump around while lights change.
+const LABEL_SPOTS = [ // [dx, dy of the text's anchor point, text-anchor], in order of preference
+  [0.5, 0.1, 'start'], [-0.5, 0.1, 'end'], [0, -0.5, 'middle'], [0, 0.75, 'middle'],
+  [0.34, -0.36, 'start'], [0.34, 0.58, 'start'], [-0.34, -0.36, 'end'], [-0.34, 0.58, 'end'],
+];
+let labelCache = { key: null, layout: null };
+
+function labelLayout() {
+  const map = mapView.map;
+  const key = JSON.stringify([map.lights, map.shapes, FIXTURES.map((f) => f.name)]);
+  if (labelCache.key === key) return labelCache.layout;
+
+  const texts = shortLabels();
+  const placed = FIXTURES.filter((f) => map.lights[f.name]);
+  const symbolBox = (p) => ({ x: p.x - 0.3, y: p.y - 0.3, w: 0.6, h: 0.6 });
+  const symbols = placed.map((f) => ({ name: f.name, box: symbolBox(map.lights[f.name]) }));
+  const segments = [];
+  for (const sh of map.shapes) {
+    if (sh.type === 'line') segments.push([sh.x1, sh.y1, sh.x2, sh.y2]);
+    else {
+      const { x, y, w, h } = sh;
+      segments.push([x, y, x + w, y], [x + w, y, x + w, y + h], [x, y + h, x + w, y + h], [x, y, x, y + h]);
+    }
+  }
+  const taken = [];
+  const layout = new Map();
+  // Most crowded lights first, so they get the best spots.
+  const crowd = (f) => {
+    const p = map.lights[f.name];
+    return placed.filter((o) => o !== f && Math.hypot(map.lights[o.name].x - p.x, map.lights[o.name].y - p.y) < 1.5).length;
+  };
+  for (const f of [...placed].sort((a, b) => crowd(b) - crowd(a))) {
+    const p = map.lights[f.name], text = texts.get(f.name);
+    const w = text.length * LABEL_SIZE * 0.58 + 0.04, h = LABEL_SIZE;
+    let best = null;
+    LABEL_SPOTS.forEach(([dx, dy, anchor], k) => {
+      const left = anchor === 'start' ? dx : anchor === 'end' ? dx - w : dx - w / 2;
+      const box = { x: p.x + left, y: p.y + dy - h * 0.8, w, h };
+      let score = k * 0.01;
+      for (const s of symbols) if (overlap(box, s.box)) score += 10;
+      for (const t of taken) if (overlap(box, t)) score += 10;
+      for (const seg of segments) if (segmentHitsBox(seg, box)) score += 4;
+      if (!best || score < best.score) best = { score, box, x: dx, y: dy, anchor };
+    });
+    taken.push(best.box);
+    layout.set(f.name, { text, x: best.x, y: best.y, anchor: best.anchor });
+  }
+  labelCache = { key, layout };
+  return layout;
+}
+
+function overlap(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+// Whether a line segment crosses a box (Liang-Barsky clipping).
+function segmentHitsBox([x1, y1, x2, y2], b) {
+  const dx = x2 - x1, dy = y2 - y1;
+  let t0 = 0, t1 = 1;
+  for (const [p, q] of [[-dx, x1 - b.x], [dx, b.x + b.w - x1], [-dy, y1 - b.y], [dy, b.y + b.h - y1]]) {
+    if (p === 0) { if (q < 0) return false; continue; }
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+
+// Key under the map: one symbol per model in use, and what the marks mean.
+function renderLegend() {
+  const box = el('map-legend');
+  if (!box) return;
+  box.replaceChildren();
+  const icon = (draw) => {
+    const s = document.createElementNS(SVG_NS, 'svg');
+    s.setAttribute('viewBox', '-0.5 -0.5 1 1');
+    s.setAttribute('class', 'legend-icon');
+    draw(s);
+    return s;
+  };
+  const item = (svg, text) => {
+    const span = document.createElement('span');
+    span.className = 'legend-item';
+    span.append(svg, text);
+    box.appendChild(span);
+  };
+  for (const key of [...new Set(FIXTURES.map((f) => f.model))]) {
+    item(icon((s) => drawSymbol(s, symbolFor(key), SYMBOL_R)), MODELS[key].label);
+  }
+  item(icon((s) => { const sym = drawSymbol(s, 'circle', SYMBOL_R); sym.style.fill = 'rgb(255,236,200)'; }), 'Filled: on, in its colour');
+  item(icon((s) => drawSymbol(s, 'circle', SYMBOL_R)), 'Hollow: off');
+  item(icon((s) => drawPresetRing(s)), 'Colour preset set');
+  item(icon((s) => drawArrow(s, { x: -0.45, y: 0 }, { dx: 0.5, dy: 0 }, 'rgb(255,236,200)')), 'Where it points (none: straight down)');
 }
 
 function drawSymbol(parent, symbol, r) {
