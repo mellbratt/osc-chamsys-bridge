@@ -93,7 +93,9 @@ const server = http.createServer((req, res) => {
   // The files are small, so this is quick.
   let data;
   try { data = fs.readFileSync(filePath); } catch { res.writeHead(404); return res.end('Not found'); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+  // no-cache: the browser checks for a new version every time, so a page
+  // opened after an update never runs old files.
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
   res.end(data);
 });
 
@@ -194,6 +196,17 @@ function dropClient(ws) {
   broadcastState();
 }
 
+// One line about how long a page took to open, from the page's own timings (ms).
+function loadReport(m) {
+  const ms = (v) => (Number.isFinite(v) ? `${(v / 1000).toFixed(1)} s` : '?');
+  const parts = [`ready after ${ms(m.total)}`, `first reply from the bridge after ${ms(m.firstByte)}`,
+    `page files after ${ms(m.filesLoaded)}`, `connected to the bridge after ${ms(m.connected)}`];
+  const slow = Array.isArray(m.slowest) ? m.slowest.filter((r) => r && typeof r.name === 'string').slice(0, 3) : [];
+  if (slow.length) parts.push(`slowest files: ${slow.map((r) => `${r.name.slice(0, 60)} ${ms(r.ms)}`).join(', ')}`);
+  if (typeof m.browser === 'string') parts.push(m.browser.slice(0, 120));
+  return parts.join('; ');
+}
+
 function refuse(ws, busy, what) {
   const owner = (id) => [...clients.values()].find((c) => c.id === id);
   const items = busy.map((b) => ({ ...b, address: b.owner && owner(b.owner) ? label(owner(b.owner)) : undefined }));
@@ -258,6 +271,9 @@ wss.on('connection', (ws, req) => {
       if (busy) refuse(ws, [busy], 'raw');
     } else if (msg.type === 'raw-clear') {
       rig.clearRaw(client.id);
+    } else if (msg.type === 'loaded') {
+      // The page reports how long it took to open, to find what makes it slow.
+      console.log(`Page opened on ${label(client)}: ${loadReport(msg)}`);
     } else if (msg.type === 'name') {
       const name = typeof msg.name === 'string' ? msg.name.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
       client.typedName = name || null;
