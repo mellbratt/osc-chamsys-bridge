@@ -472,7 +472,7 @@ function updateStatus(s) {
 function showOscAddress(o) {
   const ips = o.addresses.length ? o.addresses : [location.hostname];
   el('osc-where').textContent = o.listening
-    ? `Your own code can send OSC to ${ips.join(' or ')}, port ${o.port} (UDP), or from a browser to ws://${ips[0]}:${o.httpPort}/osc. Replies come back on port ${o.replyPort}.`
+    ? `Your own code can send OSC to ${ips.join(' or ')}, port ${o.port} (UDP). Replies come back on port ${o.replyPort}.`
     : `OSC input is off: port ${o.port} is in use by another program on this computer.`;
 }
 

@@ -8,11 +8,11 @@ It has three parts:
 
 - **A Node.js bridge** (`bridge/bridge.js`). It sends Art-Net to the console and serves a control webpage.
 - **A p5.js control page** (`sketch/`). It runs in the browser and sends what its user does (take these lights, set the dimmer, solo this one) to the bridge over a WebSocket. Several people can use it at once.
-- **OSC input.** Students' own code (p5.js, TouchDesigner, Max, Pure Data, Python, phone apps) sends OSC to the bridge, e.g. `/light/26/dimmer 0.8`. See [Controlling the lights from your own code (OSC)](#controlling-the-lights-from-your-own-code-osc).
+- **OSC input.** Students' own code (TouchDesigner, Max, Pure Data, Python, phone apps) sends OSC to the bridge, e.g. `/light/26/dimmer 0.8`. See [Controlling the lights from your own code (OSC)](#controlling-the-lights-from-your-own-code-osc).
 
 ```
 browser (p5.js page) --WebSocket--> bridge.js --Art-Net (UDP 6454)--> ChamSys QuickQ --DMX--> fixtures
-student code --OSC (UDP 8000, or WebSocket /osc)--^
+student code --OSC (UDP 8000)--^
 ```
 
 - **The page** has a light map, a pan/tilt pad, one section of controls per kind of light (dimmer, colour wheel, white temperature, zoom, gobos, focus, frost — only what that kind has), solo mode for finding lights, and a channel finder for setting any single channel.
@@ -42,14 +42,14 @@ Not tested yet: several people at once, and OSC input on the console. The channe
 
 The goal is a general bridge from **OSC to Art-Net**, used by **several clients at once over a local network**:
 
-- Any OSC-capable tool (p5.js in the browser, TouchDesigner, Max, Pure Data, phones, microcontrollers) sends messages like `/light/26/dimmer 0.8`.
+- Any OSC-capable tool (TouchDesigner, Max, Pure Data, Python, phones, microcontrollers) sends messages like `/light/26/dimmer 0.8`.
 - The bridge resolves light numbers and settings to DMX channels using the room's config file, merges input from all clients, and sends the result as Art-Net.
 
 ### Gap between now and the intended version
 
 | | Now | Intended |
 |---|---|---|
-| Input protocol | JSON over WebSocket (the page), and OSC over UDP and over a WebSocket at `/osc` (students' code) | Same |
+| Input protocol | JSON over WebSocket (the page), and OSC over UDP (students' code) | Same |
 | Message level | Page: per-light settings, e.g. "take Wash 26". OSC: per-light, per-setting messages, e.g. `/light/26/dimmer 0.8` | Same |
 | Fixture/patch knowledge | In the room's config file, read by the bridge, sent to the page and used to resolve OSC messages | Same |
 | Multiple clients | A light belongs to whoever takes it first, for pages and OSC senders alike (see [Several people at once](#several-people-at-once)) | Same |
@@ -170,8 +170,8 @@ Changes are saved to the config file straight away.
 Students' own code can control the lights by sending OSC to **the bridge computer**, never to the console. The bridge turns OSC into DMX exactly as it does for the page, and the same ownership rules apply.
 
 - **Where to send:** the bridge computer's IP address (the one students use to open the page), **UDP port 8000**. The page shows the address and port under the status line.
-- **From a browser** (p5.js), where UDP isn't possible: binary OSC over a WebSocket at `ws://<bridge-ip>:8080/osc`, or to `ws://<bridge-ip>:8080` with the WebSocket protocol `osc` (what [osc-js](https://github.com/adzialocha/osc-js) needs, see the example below).
-- **Replies** go back to the sender's IP on **UDP port 9000**, or over the WebSocket. Send `/reply 9001` to get them on another port.
+- **The code must run on a computer or phone on the venue network.** The bridge can't be reached from the internet, and code running in a web browser (p5.js, Gibber, online editors) can't send OSC.
+- **Replies** go back to the sender's IP on **UDP port 9000**. Send `/reply 9001` to get them on another port.
 - Both ports can be changed in the config: `"osc": { "port": 8000, "replyPort": 9000 }`.
 
 ### Addresses
@@ -219,7 +219,7 @@ The same rules as the page (see [Several people at once](#several-people-at-once
 
 - **The sender is its IP address.** Everything from one computer counts as one sender, whatever program or port it uses. Two students on one computer share their lights.
 - **The first message to a free light takes it.** A light someone else has stays with them; the sender gets a `/taken` reply saying who has it. `/light/all/...` and the kind words take every free light that has the setting and skip busy ones.
-- **Any message counts as contact. After 10 seconds without a message, the sender's lights are freed** and go dark. A script that sets a light once and then waits must send `/ping` (or anything) every few seconds. A browser connected to `/osc` stays in contact while the page is open, and its lights are freed when it closes.
+- **Any message counts as contact. After 10 seconds without a message, the sender's lights are freed** and go dark. A script that sets a light once and then waits must send `/ping` (or anything) every few seconds.
 - The bridge computer's **Free its lights** button works for OSC senders too.
 
 ### Replies
@@ -250,27 +250,6 @@ while True:
     bridge.send_message("/light/27/pan", p)
     bridge.send_message("/light/28/pan", 1 - p)
     time.sleep(1 / 30)
-```
-
-p5.js in the browser, with [osc-js](https://github.com/adzialocha/osc-js). The venue network has no internet, so download `osc.min.js` beforehand and put it next to your sketch instead of loading it from a CDN:
-
-```html
-<script src="osc.min.js"></script>
-```
-```js
-// protocol: 'osc' tells the bridge this is OSC, not the control page
-// (osc-js can't connect to the /osc path).
-const osc = new OSC({ plugin: new OSC.WebsocketClientPlugin({ host: '<bridge-ip>', port: 8080, protocol: 'osc' }) });
-osc.open();
-osc.on('/warn', (m) => console.log('bridge:', m.args[0]));
-
-function draw() {
-  // All washes follow the mouse
-  if (osc.status() === OSC.STATUS.IS_OPEN) {
-    osc.send(new OSC.Message('/light/wash/pan', mouseX / width));
-    osc.send(new OSC.Message('/light/wash/tilt', mouseY / height));
-  }
-}
 ```
 
 TouchDesigner (OSC Out CHOP), Max (`udpsend`), Pure Data (`netsend -u -b` with `oscformat`) and phone apps send to `<bridge-ip>` port 8000 in the same way; to see replies, receive OSC on port 9000.

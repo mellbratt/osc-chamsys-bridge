@@ -15,10 +15,9 @@
 // Several clients can control lights at once: a light belongs to whoever
 // takes it first, until they let go or go quiet (see rig.js).
 //
-// Students' own code can send OSC to this computer (see osc.js): over UDP on
-// osc.port (default 8000), or from a browser over a WebSocket at /osc on the
-// web page's port. Replies go back to the sender, on UDP osc.replyPort
-// (default 9000) or over its WebSocket.
+// Students' own code can send OSC to this computer (see osc.js) over UDP on
+// osc.port (default 8000). Replies go back to the sender on osc.replyPort
+// (default 9000).
 //
 // Then open http://localhost:8080 in the browser.
 
@@ -106,16 +105,7 @@ const server = http.createServer((req, res) => {
 });
 
 // ---------- Clients ----------
-// Pages connect to /, OSC from browsers to /osc. Two servers, so pages'
-// JSON is never sent to OSC sockets. osc-js can't add a path to its URL,
-// so asking for the WebSocket protocol "osc" also counts as OSC.
-const wss = new WebSocketServer({ noServer: true });
-const oscWss = new WebSocketServer({ noServer: true });
-server.on('upgrade', (req, socket, head) => {
-  const protocols = String(req.headers['sec-websocket-protocol'] || '').split(',').map((p) => p.trim().toLowerCase());
-  const target = /^\/osc(\/|\?|$)/.test(req.url) || protocols.includes('osc') ? oscWss : wss;
-  target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
-});
+const wss = new WebSocketServer({ server });
 // ws -> { id, address, canEdit, lastHeard, hostName, typedName, connectedAt, last, lastValues (per model) }
 const clients = new Map();
 // OSC senders, by IP address (see the OSC section below).
@@ -329,23 +319,21 @@ wss.on('connection', (ws, req) => {
 });
 
 // ---------- OSC ----------
-// An OSC sender is everything sent from one IP address, over UDP or the /osc
-// WebSocket: that's the owner of its lights. Any message counts as contact
-// (an open /osc WebSocket also answers pings by itself, like a page). After
-// QUIET_MS of silence its lights are freed and it leaves the device list.
+// An OSC sender is everything sent from one IP address: that's the owner of
+// its lights. Any message counts as contact. After QUIET_MS of silence its
+// lights are freed and it leaves the device list.
 
 const router = new osc.OscRouter(rig, config, (id) => (findClient(id) ? label(findClient(id)) : 'someone else'));
 const oscUdp = dgram.createSocket('udp4');
 let oscListening = false;
 
 function senderFor(address) {
-  if (address === '::1') address = '127.0.0.1'; // the same computer, whether over UDP or a WebSocket
   let s = oscSenders.get(address);
   if (s) return s;
   s = {
     id: `o${nextClientId++}`, osc: true, address, canEdit: false, lastHeard: Date.now(),
     hostName: null, typedName: null, connectedAt: Date.now(), last: null,
-    replyPort: OSC_REPLY_PORT, usedUdp: false, sockets: new Set(),
+    replyPort: OSC_REPLY_PORT,
     warned: new Set(), taken: new Map(), // so warnings and /taken are said once
   };
   oscSenders.set(address, s);
@@ -355,27 +343,22 @@ function senderFor(address) {
   return s;
 }
 
-// Sends a reply to a sender on every way it has used: its open /osc
-// WebSockets and, if it has sent over UDP, its reply port.
-function notify(sender, address, args) {
-  const packet = osc.encode(address, args);
-  for (const ws of sender.sockets) if (ws.readyState === 1) ws.send(packet);
-  if (sender.usedUdp) udpReply(sender, packet);
-}
-function udpReply(sender, packet) {
-  oscUdp.send(packet, sender.replyPort, sender.address, (err) => {
+// Sends a reply to a sender, on its reply port.
+function reply(sender, address, args) {
+  oscUdp.send(osc.encode(address, args), sender.replyPort, sender.address, (err) => {
     if (err) console.error(`OSC reply to ${sender.address}:${sender.replyPort} failed: ${err.message}`);
   });
 }
 
-// One packet from a sender. `reply` answers on the way it came.
-function handleOsc(sender, data, reply) {
+// One packet from a sender.
+function handleOsc(sender, data) {
+  const answer = (address, args) => reply(sender, address, args);
   sender.lastHeard = Date.now();
   let messages;
   try {
     messages = osc.decode(data);
   } catch (err) {
-    router.warn(sender, reply, 'not-osc', `That wasn't an OSC message (${err.message}). Is your tool set to send OSC?`);
+    router.warn(sender, answer, 'not-osc', `That wasn't an OSC message (${err.message}). Is your tool set to send OSC?`);
     sender.last = { summary: summarizeOsc({ type: 'not-osc' }), raw: `${data.length} bytes that aren't OSC`, at: Date.now() };
     broadcastState();
     return;
@@ -383,7 +366,7 @@ function handleOsc(sender, data, reply) {
   // A bundle's messages are applied one after the other, before the next
   // Art-Net frame, so they take effect together.
   let result = null;
-  for (const m of messages) result = router.handle(sender, m, reply);
+  for (const m of messages) result = router.handle(sender, m, answer);
   const text = messages.map((m) => [m.address, ...m.args.map(argText)].join(' ')).join('\n');
   if (result) sender.last = { summary: summarizeOsc(result), raw: text.length > 600 ? `${text.slice(0, 600)}…` : text, at: Date.now() };
   broadcastState();
@@ -399,7 +382,7 @@ function freeOscSender(sender, why) {
   const lost = Object.entries(rig.owners()).filter(([, o]) => o.owner === sender.id).map(([name]) => name);
   rig.dropClient(sender.id);
   sender.taken.clear();
-  if (lost.length) notify(sender, '/freed', [`${why}: ${lost.join(', ')}.`, ...lost.map(osc.lightNumber).filter((n) => n != null)]);
+  if (lost.length) reply(sender, '/freed', [`${why}: ${lost.join(', ')}.`, ...lost.map(osc.lightNumber).filter((n) => n != null)]);
   broadcastState();
 }
 
@@ -407,13 +390,10 @@ function dropOscSender(sender, why) {
   console.log(`OSC sender ${sender.id} (${sender.address}) ${why}; its lights are free`);
   freeOscSender(sender, `Your lights were freed after ${QUIET_MS / 1000} s without a message`);
   oscSenders.delete(sender.address);
-  for (const ws of sender.sockets) ws.terminate();
 }
 
 oscUdp.on('message', (data, rinfo) => {
-  const sender = senderFor(rinfo.address);
-  sender.usedUdp = true;
-  handleOsc(sender, data, (address, args) => udpReply(sender, osc.encode(address, args)));
+  handleOsc(senderFor(rinfo.address), data);
 });
 oscUdp.on('error', (err) => {
   oscListening = false;
@@ -422,35 +402,10 @@ oscUdp.on('error', (err) => {
 oscUdp.on('listening', () => { oscListening = true; });
 oscUdp.bind(OSC_PORT);
 
-oscWss.on('connection', (ws, req) => {
-  const sender = senderFor(String(req.socket.remoteAddress || '').replace(/^::ffff:/, ''));
-  sender.sockets.add(ws);
-  sender.lastHeard = Date.now();
-  ws.on('pong', () => { sender.lastHeard = Date.now(); });
-  ws.on('message', (data, isBinary) => {
-    if (!isBinary) data = Buffer.from(String(data)); // text frames aren't OSC; decode says so
-    handleOsc(sender, data, (address, args) => { if (ws.readyState === 1) ws.send(osc.encode(address, args)); });
-  });
-  ws.on('close', () => {
-    sender.sockets.delete(ws);
-    // Like closing the page: its lights are freed, unless it also sends over UDP.
-    if (!sender.sockets.size && !sender.usedUdp && oscSenders.get(sender.address) === sender) {
-      console.log(`OSC sender ${sender.id} (${sender.address}) disconnected; its lights are free`);
-      rig.dropClient(sender.id);
-      oscSenders.delete(sender.address);
-      broadcastState();
-    }
-  });
-});
-
-// Senders that have gone quiet lose their lights; open /osc WebSockets are
-// pinged, as pages are.
+// Senders that have gone quiet lose their lights.
 setInterval(() => {
   const now = Date.now();
-  for (const s of oscSenders.values()) {
-    if (now - s.lastHeard > QUIET_MS) dropOscSender(s, 'went quiet');
-    else for (const ws of s.sockets) if (ws.readyState === 1) ws.ping();
-  }
+  for (const s of oscSenders.values()) if (now - s.lastHeard > QUIET_MS) dropOscSender(s, 'went quiet');
 }, PING_MS);
 
 // Where students should send, shown on the page: this computer's network
@@ -458,7 +413,7 @@ setInterval(() => {
 function oscStatus() {
   const addresses = Object.values(os.networkInterfaces()).flat()
     .filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address);
-  return { listening: oscListening, port: OSC_PORT, replyPort: OSC_REPLY_PORT, httpPort: HTTP_PORT, addresses };
+  return { listening: oscListening, port: OSC_PORT, replyPort: OSC_REPLY_PORT, addresses };
 }
 
 server.listen(HTTP_PORT, () => {
@@ -467,6 +422,6 @@ server.listen(HTTP_PORT, () => {
   console.log(`Controlling console universes ${rig.universes.join(', ')} at ${CONSOLE_IP} (Art-Net ${rig.universes.map(artnetUniverse).join(', ')})`);
   console.log('Lights nobody has taken are dark. "Release to console" on the page hands control back.');
   const { addresses } = oscStatus();
-  console.log(`OSC: send to ${addresses.length ? addresses.join(' or ') : 'this computer'}, UDP port ${OSC_PORT}, or ws://…:${HTTP_PORT}/osc from a browser. Replies go to port ${OSC_REPLY_PORT}.`);
+  console.log(`OSC: send to ${addresses.length ? addresses.join(' or ') : 'this computer'}, UDP port ${OSC_PORT}. Replies go to port ${OSC_REPLY_PORT}.`);
   for (const n of router.notes()) console.log(`Note: ${n}`);
 });
