@@ -34,7 +34,7 @@ Tested on a ChamSys QuickQ 30 with Jet Wash 7, Jet Profile300LT, EclPar IPMFC an
 | Solo mode | |
 | The map's live view of brightness, colour and direction, though it's clunky to use | |
 
-Not tested yet: several people at once. The channel layouts come from the Prolights user manuals.
+Not tested yet: several people at once. The channel layouts come from the Prolights DMX charts.
 
 ## What it is intended to do
 
