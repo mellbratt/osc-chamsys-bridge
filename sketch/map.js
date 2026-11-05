@@ -254,11 +254,7 @@ function liveLight(f) {
   const v = (off) => (off == null ? null : fr[f.address - 1 + off]);
   const v16 = (hi, lo) => (v(hi) == null ? null : (v(hi) * 256 + (v(lo) ?? 0)) / 65535);
   const level = c.dimmer != null ? v(c.dimmer) / 255 : 1;
-  let rgb = [255, 236, 200]; // warm white when the colour is unknown
-  if (c.red != null && c.green != null && c.blue != null) {
-    const w = v(c.white) ?? 0;
-    rgb = [v(c.red), v(c.green), v(c.blue)].map((x) => Math.min(255, x + w));
-  }
+  const rgb = Colour.displayRgb(T, (role) => v(c[role])).map(Math.round);
   // A colour preset (macro) is set. Its exact colour isn't known here, so
   // the map marks it instead of guessing. 0-1 means "no preset".
   const macro = c.colorMacro != null && v(c.colorMacro) > 1 ? v(c.colorMacro) : 0;
@@ -521,7 +517,6 @@ function renderLegend() {
   }
   item(icon((s) => { const sym = drawSymbol(s, 'circle', SYMBOL_R); sym.style.fill = 'rgb(255,236,200)'; }), 'Filled: on, in its colour');
   item(icon((s) => drawSymbol(s, 'circle', SYMBOL_R)), 'Hollow: off');
-  item(icon((s) => drawPresetRing(s)), 'Colour preset set');
   item(icon((s) => drawArrow(s, { x: -0.45, y: 0 }, { dx: 0.5, dy: 0 }, 'rgb(255,236,200)')), 'Where it points (none: straight down)');
 }
 

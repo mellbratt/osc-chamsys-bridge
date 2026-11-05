@@ -151,6 +151,12 @@ function check(cfg) {
       if (m[k] != null && !(typeof m[k] === 'number' && m[k] > 0 && m[k] <= 720)) p.push(`${where}.${k} must be a number of degrees, or null if unknown.`);
     }
     if (m.symbol != null && !SYMBOLS.includes(m.symbol)) p.push(`${where}.symbol must be one of ${SYMBOLS.join(', ')}.`);
+    for (const k of ['cctRange', 'ctoRange']) {
+      const r = m[k];
+      if (r != null && !(Array.isArray(r) && r.length === 2 && r.every((x) => typeof x === 'number' && x >= 1000 && x <= 20000) && r[0] < r[1])) {
+        p.push(`${where}.${k} must be [lowest, highest] in kelvin, e.g. [2800, 10000].`);
+      }
+    }
   }
 
   const lights = cfg.lights || [];
