@@ -87,11 +87,14 @@ const server = http.createServer((req, res) => {
   const urlPath = req.url === '/' ? '/index.html' : req.url.split('?')[0];
   const filePath = path.join(SKETCH_DIR, path.normalize(urlPath));
   if (!filePath.startsWith(SKETCH_DIR)) { res.writeHead(403); return res.end(); }
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('Not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
-    res.end(data);
-  });
+  // Read synchronously: Node's async file reads share a small thread pool
+  // with network-name lookups (see lookUpName), and on a network without a
+  // name server those lookups can hang and hold up the page for everyone.
+  // The files are small, so this is quick.
+  let data;
+  try { data = fs.readFileSync(filePath); } catch { res.writeHead(404); return res.end('Not found'); }
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+  res.end(data);
 });
 
 // ---------- Clients ----------
