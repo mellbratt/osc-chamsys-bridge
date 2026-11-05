@@ -182,10 +182,13 @@ function short(names, max = 3) {
 
 class OscRouter {
   // `labelOf(clientId)` gives the name shown for whoever has a light.
-  constructor(rig, config, labelOf) {
+  // `ambient.on()` says whether ambient is switched on at the bridge, and
+  // `ambient.changed()` is called when a sender becomes or stops being ambient.
+  constructor(rig, config, labelOf, ambient = { on: () => false, changed: () => {} }) {
     this.rig = rig;
     this.config = config;
     this.labelOf = labelOf;
+    this.ambient = ambient;
     this.lights = config.lights.map((l) => ({
       ...l, number: lightNumber(l.name), group: (config.models[l.model].group || '').toLowerCase() || null,
     }));
@@ -260,6 +263,14 @@ class OscRouter {
       sender.replyPort = port;
       return { type: 'reply', port };
     }
+    // /ambient 1: this sender runs the room between performances (see rig.js).
+    if (parts.length === 1 && head === 'ambient') {
+      const on = numbers(args)[0] !== 0; // no value also means on
+      if (on) this.rig.ambient.add(sender.id);
+      else this.rig.ambient.delete(sender.id);
+      this.ambient.changed(sender);
+      return { type: 'ambient', on };
+    }
     if (parts.length === 1 && head === 'info') {
       this.info(reply);
       return { type: 'info' };
@@ -271,6 +282,10 @@ class OscRouter {
 
   // /light/<which>/<what> value(s). Returns nothing if the message was wrong.
   light(sender, which, what, args, reply) {
+    if (this.rig.ambient.has(sender.id) && !this.ambient.on()) {
+      this.warn(sender, reply, 'ambient-off', 'Ambient is switched off on the bridge computer, so your light messages are ignored until it is switched on.');
+      return { type: 'ambient-off' };
+    }
     const setting = SETTINGS[what];
     if (!setting) {
       const known = Object.keys(SETTINGS).filter((k) => k !== 'color').join(', ');

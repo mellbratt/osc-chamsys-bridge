@@ -7,6 +7,9 @@
 // - A free light is dark and parked at its defaults.
 // - A client with a soloed light: that light flashes, the client's other
 //   lights go dark. Other clients' lights are left alone.
+// - Ambient clients (in `ambient`) run the room between performances. They
+//   only get lights nobody else wants: anyone else who takes one of their
+//   lights gets it straight away.
 //
 // Settings use the same units as the page's controls:
 //   pan, tilt 0..1; dimmer, beam, colorMacro, focus, frost 0..255;
@@ -66,6 +69,15 @@ class Rig {
     // name -> { owner, selected, solo, look }
     this.state = new Map(this.lights.map((l) => [l.name, free()]));
     this.raw = new Map(); // "universe:channel" -> { owner, value }
+    this.ambient = new Set(); // ambient client ids
+  }
+
+  // Whether `client` may take a light `s` someone else has: only from an
+  // ambient client, and not as one. The light starts afresh for the taker.
+  takesOver(client, name, s) {
+    if (!this.ambient.has(s.owner) || this.ambient.has(client)) return false;
+    this.state.set(name, free());
+    return true;
   }
 
   // ---------- Ownership ----------
@@ -82,9 +94,12 @@ class Rig {
   take(client, names, values, looks) {
     const busy = [];
     for (const name of names) {
-      const s = this.state.get(name);
+      let s = this.state.get(name);
       if (!s) continue;
-      if (s.owner && s.owner !== client) { busy.push({ name, owner: s.owner }); continue; }
+      if (s.owner && s.owner !== client) {
+        if (!this.takesOver(client, name, s)) { busy.push({ name, owner: s.owner }); continue; }
+        s = this.state.get(name);
+      }
       s.owner = client;
       s.selected = true;
       s.look = this.lookFor(name, s, values, looks);
@@ -114,8 +129,11 @@ class Rig {
 
   // Solos one light for a client (null ends solo). Returns busy info or null.
   solo(client, name, values, looks) {
-    const s = name == null ? null : this.state.get(name);
-    if (s && s.owner && s.owner !== client) return { name, owner: s.owner };
+    let s = name == null ? null : this.state.get(name);
+    if (s && s.owner && s.owner !== client) {
+      if (!this.takesOver(client, name, s)) return { name, owner: s.owner };
+      s = this.state.get(name);
+    }
     for (const [n, other] of this.state) {
       if (other.owner === client && other.solo && n !== name) { other.solo = false; this.freeIfUnused(n); }
     }
@@ -135,8 +153,11 @@ class Rig {
     if (!this.universes.includes(u) || !(ch >= 1 && ch <= 512)) return null;
     const light = this.lightAt(u, ch);
     if (light && this.models[light.model].ch.control === ch - light.address) return { reason: 'control' };
-    const s = light && this.state.get(light.name);
-    if (s && s.owner && s.owner !== client) return { name: light.name, owner: s.owner };
+    let s = light && this.state.get(light.name);
+    if (s && s.owner && s.owner !== client) {
+      if (!this.takesOver(client, light.name, s)) return { name: light.name, owner: s.owner };
+      s = this.state.get(light.name);
+    }
     const r = this.raw.get(key);
     if (r && r.owner !== client) return { channel: key, owner: r.owner };
     if (value == null) {
@@ -185,7 +206,7 @@ class Rig {
   owners() {
     const out = {};
     for (const [name, s] of this.state) {
-      if (s.owner) out[name] = { owner: s.owner, selected: s.selected, solo: s.solo };
+      if (s.owner) out[name] = { owner: s.owner, selected: s.selected, solo: s.solo, ...(this.ambient.has(s.owner) && { ambient: true }) };
     }
     return out;
   }

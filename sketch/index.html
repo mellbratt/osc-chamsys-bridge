@@ -63,9 +63,11 @@
 
       <div class="row">
         <button id="toggle-send" hidden>Release to console</button>
+        <button id="toggle-ambient" hidden>Switch ambient on</button>
         <button id="blackout" class="quiet">Blackout</button>
       </div>
-      <p class="small">Tick lights to control them. A light belongs to whoever ticks it first, until they untick it or close the page; lights nobody has ticked are dark.</p>
+      <p id="ambient-note" class="small"></p>
+      <p class="small">Tick lights to control them. A light belongs to whoever ticks it first, until they untick it or close the page; lights nobody has ticked are dark, unless ambient is on.</p>
       <p id="control-note" class="small note" role="status"></p>
 
       <fieldset id="panel-solo">

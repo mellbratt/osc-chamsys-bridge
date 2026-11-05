@@ -2,6 +2,22 @@
 
 Control the moving heads on a ChamSys QuickQ lighting console from code running on an ordinary computer, by sending Art-Net over the local network.
 
+## How to connect
+
+Everything goes through **the bridge computer**, never straight to the console. Ask for its IP address: it's shown on the control page under the status line, and in the bridge's terminal when it starts.
+
+1. **Join the venue network** with your laptop or phone. The bridge can't be reached from the internet, so your device and your code must be on the venue network.
+2. **Open the control page:** `http://<bridge-ip>:8080` in a browser. Type your name under **Connected devices**, then tick lights to control them. See [Using the control page](#using-the-control-page).
+3. **Control the lights from your own code** (TouchDesigner, Max, Pure Data, Python, phone apps): send OSC to `<bridge-ip>`, **UDP port 8000**. For example:
+   ```
+   /name "Anna"
+   /light/26/dimmer 0.8
+   /light/26/colour 1 0.4 0
+   ```
+   Replies (warnings, who has a light) come back to your computer on UDP port 9000. Code running in a web browser (p5.js, online editors) can't send OSC. See [Controlling the lights from your own code (OSC)](#controlling-the-lights-from-your-own-code-osc) for every address.
+
+A light belongs to whoever takes it first, and is freed when they let go, close the page or stop sending for 10 seconds.
+
 ## What it does now
 
 It has three parts:
@@ -26,8 +42,10 @@ Tested on a ChamSys QuickQ 30 with Jet Wash 7, Jet Profile300LT, EclPar IPMFC an
 
 | Works | Doesn't work yet |
 |---|---|
-| Taking over universes 1 and 2 | **Colour.** The old colour control set a colour-preset number and did nothing on Profiles and Fresnels. It has been replaced by a colour wheel and white slider per kind of light (see [Colour](#colour)), not yet tested on the console. |
+| Taking over universes 1 and 2 | |
 | Dimmer | |
+| Colour, with the colour wheel and white slider (see [Colour](#colour)) | |
+| Several devices connected at once, each with its name | |
 | Pan and tilt, including Sweep | |
 | Beam (zoom) | |
 | Gobos: choosing, fixed angle and spinning | |
@@ -36,7 +54,7 @@ Tested on a ChamSys QuickQ 30 with Jet Wash 7, Jet Profile300LT, EclPar IPMFC an
 | Solo mode | |
 | The map's live view of brightness, colour and direction, though it's clunky to use | |
 
-Not tested yet: several people at once, and OSC input on the console. The channel layouts come from the Prolights DMX charts.
+Not tested yet: OSC input and ambient on the console. The channel layouts come from the Prolights DMX charts.
 
 ## What it is intended to do
 
@@ -117,6 +135,17 @@ The map shows each light in the colour worked out from what is being sent.
 **Release to console** (on the bridge computer only) hands every universe back to the console, e.g. to run a show from it. **Take back from console** returns control to the bridge.
 
 **Warning: control is per whole universe.** While the bridge runs, every channel it doesn't set is 0, so static lights not in the config go dark.
+
+### Ambient (between performances)
+
+On the bridge computer, **Switch ambient on** makes the lights nobody uses do something between performances, instead of staying dark:
+
+- **On its own**, the bridge slowly cycles every free light round the colour wheel at half brightness, each light a little further round than the next, once a minute.
+- **With a music program:** a program that sends `/ambient 1` over OSC (see [OSC](#controlling-the-lights-from-your-own-code-osc)) runs the free lights instead, e.g. `/light/all/colour ...` in time with the music. The built-in cycle stops while it sends.
+- **Performers always win:** ticking a light on the page, or sending OSC to it, takes it from ambient straight away. When they let go, ambient picks it up again.
+- **Switch ambient off** frees ambient's lights; they go dark. The music program's light messages are then ignored until ambient is switched on again.
+
+Every page shows whether ambient is on. Ambient is off each time the bridge starts.
 
 ### Several people at once
 
@@ -209,6 +238,7 @@ Other addresses:
 | `/ping` | "Still here": keeps your lights without changing anything |
 | `/release` | Let go of all your lights |
 | `/info` | Asks for the room. Replies `/room width height count` (metres), then `/info/light number name kind x y facing` per light; x, y and facing are -1 for lights not on the map |
+| `/ambient 1` | This sender runs the free lights between performances (see [Ambient](#ambient-between-performances)). Its lights give way to anyone who takes them, and its messages are ignored while ambient is switched off. `/ambient 0` makes it an ordinary sender again |
 | `/reply 9001` | Send replies to this port instead of 9000 |
 
 A setting a light doesn't have (e.g. `pan` to a Par) is skipped for that light. Bundles are applied together, straight away (their time tag is ignored).

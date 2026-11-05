@@ -67,6 +67,8 @@ function summarizeOsc(r) {
     case 'name': return r.name ? `OSC: named itself "${r.name}"` : 'OSC: cleared its name';
     case 'reply': return `OSC: asked for replies on port ${r.port}`;
     case 'info': return 'OSC: asked for the room info';
+    case 'ambient': return r.on ? 'OSC: runs the ambient lights (/ambient 1)' : 'OSC: stopped being ambient (/ambient 0)';
+    case 'ambient-off': return 'OSC: ambient light messages, ignored because ambient is switched off';
     case 'unknown': return `OSC: unknown address ${String(r.address).slice(0, 60)}`;
     case 'not-osc': return 'sent something that isn\'t OSC';
     default: return `OSC: ${String(r.address || '').slice(0, 60)} was not understood (see the warning it was sent)`;

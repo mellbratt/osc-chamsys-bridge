@@ -45,6 +45,8 @@ const QUIET_MS = 10000;      // a client silent this long loses its lights
 const PING_MS = 3000;        // how often pages are asked if they're still there
 const OSC_PORT = config.osc.port;
 const OSC_REPLY_PORT = config.osc.replyPort;
+const AMBIENT_LEVEL = 0.5;      // the built-in ambient cycle's dimmer, 0..1
+const AMBIENT_CYCLE_MS = 60000; // once round the colour wheel per minute
 
 const artnetUniverse = (consoleUniverse) => BASE_UNIVERSE + consoleUniverse - 1;
 
@@ -112,14 +114,24 @@ const clients = new Map();
 const oscSenders = new Map();
 let nextClientId = 1;
 
-const allClients = () => [...clients.values(), ...oscSenders.values()];
+// Ambient (between performances): switched on and off on the bridge
+// computer's page. While on, a music program that sent /ambient 1 drives the
+// free lights; without one, the bridge's own slow colour cycle does. Anyone
+// else taking a light gets it from ambient straight away (see rig.js).
+let ambientOn = false;
+const builtInAmbient = {
+  id: 'ambient', ambient: true, typedName: 'Ambient colour cycle', hostName: null,
+  address: 'built into the bridge', connectedAt: Date.now(), last: null,
+};
+
+const allClients = () => [...clients.values(), ...oscSenders.values(), ...(builtInRunning() ? [builtInAmbient] : [])];
 const findClient = (id) => allClients().find((c) => c.id === id);
 
 function broadcast(text) { wss.clients.forEach((c) => c.readyState === 1 && c.send(text)); }
 
 function status() {
   const universes = rig.universes.map((u) => ({ console: u, artnet: artnetUniverse(u) }));
-  return JSON.stringify({ type: 'status', inControl, packetsSent, consoleIp: CONSOLE_IP, universes, lastError, osc: oscStatus() });
+  return JSON.stringify({ type: 'status', inControl, packetsSent, consoleIp: CONSOLE_IP, universes, lastError, osc: oscStatus(), ambient: ambientStatus() });
 }
 function broadcastStatus() { broadcast(status()); }
 setInterval(broadcastStatus, 1000);
@@ -134,7 +146,7 @@ function stateMessage() {
   const now = Date.now(), list = {};
   for (const c of allClients()) {
     list[c.id] = {
-      label: label(c), address: c.address, hostName: c.hostName, typedName: c.typedName, osc: !!c.osc,
+      label: label(c), address: c.address, hostName: c.hostName, typedName: c.typedName, osc: !!c.osc, ambient: rig.ambient.has(c.id),
       connectedAgo: now - c.connectedAt,
       last: c.last && { summary: c.last.summary, raw: c.last.raw, ago: now - c.last.at },
     };
@@ -288,6 +300,10 @@ wss.on('connection', (ws, req) => {
         client.last.summary = `freed the lights of ${label(sender)}`;
         console.log(`${label(client)} freed the lights of ${label(sender)} (OSC)`);
       }
+    } else if (msg.type === 'ambient') {
+      if (!client.canEdit) return refuse(ws, [{ reason: 'not-bridge-computer' }], 'ambient');
+      setAmbient(!!msg.on);
+      client.last.summary = `switched ambient ${ambientOn ? 'on' : 'off'}`;
     } else if (msg.type === 'console') {
       if (!client.canEdit) return refuse(ws, [{ reason: 'not-bridge-computer' }], 'console');
       inControl = !!msg.control;
@@ -323,7 +339,16 @@ wss.on('connection', (ws, req) => {
 // its lights. Any message counts as contact. After QUIET_MS of silence its
 // lights are freed and it leaves the device list.
 
-const router = new osc.OscRouter(rig, config, (id) => (findClient(id) ? label(findClient(id)) : 'someone else'));
+const router = new osc.OscRouter(rig, config, (id) => (findClient(id) ? label(findClient(id)) : 'someone else'),
+  {
+    on: () => ambientOn,
+    // A sender that becomes ambient while ambient is off doesn't keep its lights.
+    changed: (sender) => {
+      if (!ambientOn && rig.ambient.has(sender.id)) freeOscSender(sender, 'Ambient is switched off on the bridge computer, so your lights were freed');
+      ambientTick();
+      broadcastStatus();
+    },
+  });
 const oscUdp = dgram.createSocket('udp4');
 let oscListening = false;
 
@@ -390,6 +415,7 @@ function dropOscSender(sender, why) {
   console.log(`OSC sender ${sender.id} (${sender.address}) ${why}; its lights are free`);
   freeOscSender(sender, `Your lights were freed after ${QUIET_MS / 1000} s without a message`);
   oscSenders.delete(sender.address);
+  if (rig.ambient.delete(sender.id)) broadcastStatus();
 }
 
 oscUdp.on('message', (data, rinfo) => {
@@ -407,6 +433,55 @@ setInterval(() => {
   const now = Date.now();
   for (const s of oscSenders.values()) if (now - s.lastHeard > QUIET_MS) dropOscSender(s, 'went quiet');
 }, PING_MS);
+
+// ---------- Ambient ----------
+rig.ambient.add(builtInAmbient.id);
+
+// The music program running ambient: an OSC sender that sent /ambient 1.
+const ambientProgram = () => [...oscSenders.values()].find((s) => rig.ambient.has(s.id));
+const builtInRunning = () => ambientOn && !ambientProgram();
+
+function ambientStatus() {
+  const program = ambientProgram();
+  return { on: ambientOn, by: !ambientOn ? null : program ? label(program) : null };
+}
+
+function setAmbient(on) {
+  if (on === ambientOn) return;
+  ambientOn = on;
+  if (on) builtInAmbient.last = { summary: 'cycling the colours of the lights nobody uses', raw: '', at: Date.now() };
+  console.log(`Ambient switched ${on ? 'on' : 'off'}`);
+  if (!on) {
+    for (const s of oscSenders.values()) {
+      if (rig.ambient.has(s.id)) freeOscSender(s, 'Ambient was switched off on the bridge computer, so your lights were freed');
+    }
+  }
+  ambientTick();
+  broadcastStatus();
+  broadcastState(true);
+}
+
+// The built-in cycle: every free light, round the colour wheel, each light a
+// little further round than the one before, so the colours move across the room.
+function ambientTick() {
+  const owned = Object.entries(rig.owners());
+  const had = owned.filter(([, o]) => o.owner === builtInAmbient.id).length;
+  if (!builtInRunning()) {
+    if (had) { rig.dropClient(builtInAmbient.id); broadcastState(); }
+    return;
+  }
+  const busy = new Set(owned.filter(([, o]) => o.owner !== builtInAmbient.id).map(([name]) => name));
+  const turn = (Date.now() % AMBIENT_CYCLE_MS) / AMBIENT_CYCLE_MS;
+  let has = 0;
+  config.lights.forEach((l, i) => {
+    if (busy.has(l.name)) return;
+    const hue = ((turn + i / config.lights.length) % 1) * 360;
+    rig.take(builtInAmbient.id, [l.name], { dimmer: AMBIENT_LEVEL * 255, hue, sat: 1 });
+    has++;
+  });
+  if (has !== had) broadcastState();
+}
+setInterval(ambientTick, 100);
 
 // Where students should send, shown on the page: this computer's network
 // addresses and the OSC port.
