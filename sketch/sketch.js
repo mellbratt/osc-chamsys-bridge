@@ -268,7 +268,7 @@ function drawPad() {
 // ---------- Bridge connection ----------
 function connect() {
   ws = new WebSocket(`ws://${location.host}`);
-  ws.onopen = () => { connected = true; lastSent = {}; updateStatus(); };
+  ws.onopen = () => { connected = true; lastSent = {}; wsOpenedAt ??= performance.now(); updateStatus(); };
   ws.onclose = () => { connected = false; updateStatus(); setTimeout(connect, 1500); };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
@@ -278,7 +278,7 @@ function connect() {
       myId = m.you;
       canEdit = m.canEdit;
       if (configJson && json !== configJson) { location.reload(); return; } // bridge restarted with a new config
-      if (!configJson) { configJson = json; applyConfig(m); initMap(m.map, m.canEdit); }
+      if (!configJson) { configJson = json; applyConfig(m); initMap(m.map, m.canEdit); reportLoadTime(); }
       else retake();
       const name = savedName();
       if (name) send({ type: 'name', name });
@@ -297,6 +297,22 @@ function connect() {
   };
 }
 function send(msg) { if (connected && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+
+// Tells the bridge how long this page took to open, and which files were
+// slowest, so a slow page shows up in the bridge's terminal. Times in ms
+// from when the page was opened.
+let wsOpenedAt = null;
+function reportLoadTime() {
+  const nav = performance.getEntriesByType('navigation')[0] || {};
+  const slowest = performance.getEntriesByType('resource')
+    .map((r) => ({ name: r.name.replace(location.origin, ''), ms: Math.round(r.duration) }))
+    .sort((a, b) => b.ms - a.ms).slice(0, 3);
+  send({
+    type: 'loaded', total: Math.round(performance.now()), firstByte: Math.round(nav.responseStart),
+    filesLoaded: Math.round(nav.loadEventStart), connected: Math.round(wsOpenedAt), slowest,
+    browser: navigator.userAgent,
+  });
+}
 
 // ---------- UI ----------
 function el(id) { return document.getElementById(id); }
