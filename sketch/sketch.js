@@ -110,7 +110,7 @@ function pushLook() {
 // Who has a light, if it's someone else: their name or address, or null.
 function otherOwner(i) {
   const o = owners[FIXTURES[i].name];
-  if (!o || o.owner === myId) return null;
+  if (!o || o.owner === myId || o.ambient) return null; // ambient gives way to anyone
   return (clientList[o.owner] && clientList[o.owner].label) || 'someone else';
 }
 function busyNote(i) {
@@ -205,10 +205,10 @@ function renderDevices() {
     head.appendChild(name);
     const addr = document.createElement('span');
     addr.className = 'small';
-    addr.textContent = [c.typedName && c.hostName, c.address, id === myId && '(this page)'].filter(Boolean).join(' · ');
+    addr.textContent = [c.typedName && c.hostName, c.address, c.osc && 'OSC', c.ambient && 'ambient', id === myId && '(this page)'].filter(Boolean).join(' · ');
     head.appendChild(addr);
     const lights = Object.entries(owners).filter(([, o]) => o.owner === id).map(([n]) => n);
-    if (canEdit && id !== myId && lights.length) {
+    if (canEdit && id !== myId && lights.length && !c.ambient) {
       const btn = document.createElement('button');
       btn.className = 'quiet';
       btn.textContent = 'Free its lights';
@@ -218,7 +218,9 @@ function renderDevices() {
     li.appendChild(head);
     const has = document.createElement('div');
     has.className = 'small';
-    has.textContent = lights.length ? `Controls ${lights.join(', ')}` : 'Controls no lights';
+    has.textContent = c.ambient
+      ? `Ambient: runs ${lights.length} light${lights.length === 1 ? '' : 's'} nobody else is using`
+      : lights.length ? `Controls ${lights.join(', ')}` : 'Controls no lights';
     li.appendChild(has);
     if (c.last) {
       const det = document.createElement('details');
@@ -339,6 +341,7 @@ function buildUi() {
   el('sweep').onchange = (e) => (state.sweep = e.target.checked);
 
   el('toggle-send').onclick = () => send({ type: 'console', control: !inControl });
+  el('toggle-ambient').onclick = () => send({ type: 'ambient', on: !ambient.on });
   el('blackout').onclick = () => {
     blackoutTypes();
     state.raw.clear(); renderRaw();
@@ -477,10 +480,36 @@ function updateStatus(s) {
     out.textContent = 'Released to the console: the console runs the lights.';
   }
   if (s && s.lastError) out.textContent += `  Error: ${s.lastError}`;
+  if (s && s.osc) showOscAddress(s.osc);
+  if (s && s.ambient) showAmbient(s.ambient);
   btn.hidden = !canEdit;
   btn.textContent = inControl ? 'Release to console' : 'Take back from console';
   btn.classList.toggle('live', inControl);
   if (FIXTURES.length) updateSoloId();
+}
+
+// Ambient: lights nobody uses run a colour cycle, or a music program's
+// lights, between performances. Switched on and off on the bridge computer.
+let ambient = { on: false, by: null };
+function showAmbient(a) {
+  ambient = a;
+  const btn = el('toggle-ambient');
+  btn.hidden = !canEdit;
+  btn.textContent = a.on ? 'Switch ambient off' : 'Switch ambient on';
+  btn.classList.toggle('live', a.on);
+  el('ambient-note').textContent = !a.on
+    ? 'Ambient is off: lights nobody uses are dark.'
+    : a.by
+      ? `Ambient is on: ${a.by} (OSC) runs the lights nobody uses. Tick a light to take it over.`
+      : 'Ambient is on: lights nobody uses slowly cycle through the colours. Tick a light to take it over.';
+}
+
+// Where students' own code should send OSC: this computer's addresses.
+function showOscAddress(o) {
+  const ips = o.addresses.length ? o.addresses : [location.hostname];
+  el('osc-where').textContent = o.listening
+    ? `Your own code can send OSC to ${ips.join(' or ')}, port ${o.port} (UDP). Replies come back on port ${o.replyPort}.`
+    : `OSC input is off: port ${o.port} is in use by another program on this computer.`;
 }
 
 // Shows the named channels of the soloed or first ticked light, as sent.
