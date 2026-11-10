@@ -1,6 +1,6 @@
 // Pages and OSC -> this script -> Art-Net (UDP 6454) -> QuickQ
 //
-// Usage:  node bridge.js [config-file]
+// Usage:  node bridge.js [--simulate] [config-file]
 //
 // The room setup (console IP, light models, lights, map) is read from a JSON
 // config file, by default config.json in the repo root. Copy
@@ -33,13 +33,23 @@ const { Rig } = require('./rig');
 const { summarize, summarizeOsc } = require('./summary');
 const osc = require('./osc');
 
-const CONFIG_PATH = path.resolve(process.argv[2] || path.join(__dirname, '..', 'config.json'));
+const CLI_ARGS = process.argv.slice(2);
+const SIMULATE_FLAGS = CLI_ARGS.filter((arg) => arg === '--simulate');
+const CONFIG_ARGS = CLI_ARGS.filter((arg) => arg !== '--simulate');
+const UNKNOWN_OPTION = CLI_ARGS.find((arg) => arg !== '--simulate' && arg.startsWith('-'));
+if (UNKNOWN_OPTION || CONFIG_ARGS.length > 1 || SIMULATE_FLAGS.length > 1) {
+  console.error('Usage: node bridge.js [--simulate] [config-file]');
+  process.exit(1);
+}
+const SIMULATE = SIMULATE_FLAGS.length === 1;
+const CONFIG_PATH = path.resolve(CONFIG_ARGS[0] || path.join(__dirname, '..', 'config.json'));
 const config = loadConfig(CONFIG_PATH);
 
 const CONSOLE_IP = config.console.ip;
 const BASE_UNIVERSE = config.console.artnetUniverseForUniverse1;
-const HTTP_PORT = 8080;
-const ARTNET_PORT = 6454;
+// The overrides keep integration tests away from running services.
+const HTTP_PORT = Number(process.env.BRIDGE_HTTP_PORT || 8080);
+const ARTNET_PORT = Number(process.env.BRIDGE_ARTNET_PORT || 6454);
 const SEND_HZ = 30;          // Art-Net should be refreshed continuously, not just on change
 const QUIET_MS = 10000;      // a client silent this long loses its lights
 const PING_MS = 3000;        // how often pages are asked if they're still there
@@ -58,8 +68,10 @@ let packetsSent = 0;
 let lastError = null;
 
 // ---------- Art-Net ----------
-const udp = dgram.createSocket('udp4');
-udp.bind(() => udp.setBroadcast(true));
+// Simulator mode never opens this socket: the rig still makes frames for the
+// page, but nothing can accidentally be sent to a console on the network.
+const udp = SIMULATE ? null : dgram.createSocket('udp4');
+if (udp) udp.bind(() => udp.setBroadcast(true));
 
 function artDmxPacket(universe, data) {
   const seq = sequences.get(universe) || 1;
@@ -79,7 +91,7 @@ function artDmxPacket(universe, data) {
 
 setInterval(() => {
   frames = rig.frames(Date.now());
-  if (!inControl) return;
+  if (!inControl || SIMULATE) return;
   for (const [u, data] of frames) {
     udp.send(artDmxPacket(artnetUniverse(u), data), ARTNET_PORT, CONSOLE_IP, (err) => {
       if (err) { lastError = err.message; console.error('UDP error:', err.message); }
@@ -133,7 +145,7 @@ function broadcast(text) { wss.clients.forEach((c) => c.readyState === 1 && c.se
 
 function status() {
   const universes = rig.universes.map((u) => ({ console: u, artnet: artnetUniverse(u) }));
-  return JSON.stringify({ type: 'status', inControl, packetsSent, consoleIp: CONSOLE_IP, universes, lastError, osc: oscStatus(), ambient: ambientStatus() });
+  return JSON.stringify({ type: 'status', simulate: SIMULATE, inControl, packetsSent, consoleIp: CONSOLE_IP, universes, lastError, osc: oscStatus(), ambient: ambientStatus() });
 }
 function broadcastStatus() { broadcast(status()); }
 setInterval(broadcastStatus, 1000);
@@ -321,6 +333,7 @@ wss.on('connection', (ws, req) => {
       setAmbient(!!msg.on);
       client.last.summary = `switched ambient ${ambientOn ? 'on' : 'off'}`;
     } else if (msg.type === 'console') {
+      if (SIMULATE) return; // there is no console to release to
       if (!client.canEdit) return refuse(ws, [{ reason: 'not-bridge-computer' }], 'console');
       inControl = !!msg.control;
       console.log(inControl ? `Controlling the console's universes again (${CONSOLE_IP})` : 'Released to the console');
@@ -510,8 +523,12 @@ function oscStatus() {
 server.listen(HTTP_PORT, () => {
   console.log(`Bridge ready. Open http://localhost:${HTTP_PORT}`);
   console.log(`Config: ${CONFIG_PATH} (${config.lights.length} lights)`);
-  console.log(`Controlling console universes ${rig.universes.join(', ')} at ${CONSOLE_IP} (Art-Net ${rig.universes.map(artnetUniverse).join(', ')})`);
-  console.log('Lights nobody has taken are dark. "Release to console" on the page hands control back.');
+  if (SIMULATE) {
+    console.log('Simulator mode: Art-Net is disabled; no console is needed. The page shows the values the bridge would send.');
+  } else {
+    console.log(`Controlling console universes ${rig.universes.join(', ')} at ${CONSOLE_IP} (Art-Net ${rig.universes.map(artnetUniverse).join(', ')})`);
+    console.log('Lights nobody has taken are dark. "Release to console" on the page hands control back.');
+  }
   const { addresses } = oscStatus();
   console.log(`OSC: send to ${addresses.length ? addresses.join(' or ') : 'this computer'}, UDP port ${OSC_PORT}. Replies go to port ${OSC_REPLY_PORT}.`);
   for (const n of router.notes()) console.log(`Note: ${n}`);

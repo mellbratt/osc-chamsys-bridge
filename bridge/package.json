@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "WebSocket to Art-Net bridge for driving a ChamSys QuickQ from p5.js",
   "main": "bridge.js",
-  "scripts": { "start": "node bridge.js" },
+  "scripts": { "start": "node bridge.js", "test": "node --test" },
   "dependencies": { "ws": "^8.18.0" }
 }
