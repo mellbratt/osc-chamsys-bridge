@@ -94,10 +94,26 @@ function saveMap(file, map, current) {
     throw new Error(`could not read ${file} to save the map: ${err.message}`);
   }
   onDisk.map = map;
-  const tmp = `${file}.saving`;
-  fs.writeFileSync(tmp, formatJson(onDisk) + '\n');
-  fs.renameSync(tmp, file);
+  writeConfig(file, onDisk);
   return map;
+}
+
+// Saves the ambient settings (already checked, see ambient.js) into the file.
+function saveAmbient(file, settings) {
+  let onDisk;
+  try {
+    onDisk = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    throw new Error(`could not read ${file} to save the ambient settings: ${err.message}`);
+  }
+  onDisk.ambient = settings;
+  writeConfig(file, onDisk);
+}
+
+function writeConfig(file, value) {
+  const tmp = `${file}.saving`;
+  fs.writeFileSync(tmp, formatJson(value) + '\n');
+  fs.renameSync(tmp, file);
 }
 
 // JSON with small objects and lists on one line, so the file stays easy to
@@ -208,4 +224,4 @@ function fail(msg) {
   process.exit(1);
 }
 
-module.exports = { loadConfig, saveMap, formatJson };
+module.exports = { loadConfig, saveMap, saveAmbient, formatJson };

@@ -28,10 +28,11 @@ const dgram = require('dgram');
 const os = require('os');
 const dns = require('dns');
 const { WebSocketServer } = require('ws');
-const { loadConfig, saveMap } = require('./config');
+const { loadConfig, saveMap, saveAmbient } = require('./config');
 const { Rig } = require('./rig');
 const { summarize, summarizeOsc } = require('./summary');
 const osc = require('./osc');
+const { ambientLook, AmbientClock, cleanAmbient, PAIRS } = require('./ambient');
 
 const CONFIG_PATH = path.resolve(process.argv[2] || path.join(__dirname, '..', 'config.json'));
 const config = loadConfig(CONFIG_PATH);
@@ -45,8 +46,6 @@ const QUIET_MS = 10000;      // a client silent this long loses its lights
 const PING_MS = 3000;        // how often pages are asked if they're still there
 const OSC_PORT = config.osc.port;
 const OSC_REPLY_PORT = config.osc.replyPort;
-const AMBIENT_LEVEL = 0.5;      // the built-in ambient cycle's dimmer, 0..1
-const AMBIENT_CYCLE_MS = 60000; // once round the colour wheel per minute
 
 const artnetUniverse = (consoleUniverse) => BASE_UNIVERSE + consoleUniverse - 1;
 
@@ -118,11 +117,14 @@ let nextClientId = 1;
 
 // Ambient (between performances): switched on and off on the bridge
 // computer's page. While on, a music program that sent /ambient 1 drives the
-// free lights; without one, the bridge's own slow colour cycle does. Anyone
+// free lights; without one, the bridge's own soft, slow look does (ambient.js). Anyone
 // else taking a light gets it from ambient straight away (see rig.js).
 let ambientOn = false;
+let ambientSettings = cleanAmbient(config.ambient); // the built-in look's settings
+const ambientClock = new AmbientClock();
+let ambientSaveTimer = null;
 const builtInAmbient = {
-  id: 'ambient', ambient: true, typedName: 'Ambient colour cycle', hostName: null,
+  id: 'ambient', ambient: true, typedName: 'Ambient (built in)', hostName: null,
   address: 'built into the bridge', connectedAt: Date.now(), last: null,
 };
 
@@ -320,6 +322,10 @@ wss.on('connection', (ws, req) => {
       if (!client.canEdit) return refuse(ws, [{ reason: 'not-bridge-computer' }], 'ambient');
       setAmbient(!!msg.on);
       client.last.summary = `switched ambient ${ambientOn ? 'on' : 'off'}`;
+    } else if (msg.type === 'ambient-settings') {
+      if (!client.canEdit) return refuse(ws, [{ reason: 'not-bridge-computer' }], 'ambient settings');
+      setAmbientSettings(msg.settings);
+      client.last.summary = 'changed the ambient settings';
     } else if (msg.type === 'console') {
       if (!client.canEdit) return refuse(ws, [{ reason: 'not-bridge-computer' }], 'console');
       inControl = !!msg.control;
@@ -459,13 +465,29 @@ const builtInRunning = () => ambientOn && !ambientProgram();
 
 function ambientStatus() {
   const program = ambientProgram();
-  return { on: ambientOn, by: !ambientOn ? null : program ? label(program) : null };
+  return { on: ambientOn, by: !ambientOn ? null : program ? label(program) : null, settings: ambientSettings, pairs: PAIRS };
+}
+
+// Changes the built-in look's settings and saves them a moment later, so
+// dragging a slider doesn't write the file on every step.
+function setAmbientSettings(values) {
+  ambientSettings = cleanAmbient(values, ambientSettings);
+  broadcastStatus();
+  clearTimeout(ambientSaveTimer);
+  ambientSaveTimer = setTimeout(() => {
+    try {
+      saveAmbient(CONFIG_PATH, ambientSettings);
+      console.log('Ambient settings saved:', JSON.stringify(ambientSettings));
+    } catch (err) {
+      console.error('Ambient settings not saved:', err.message);
+    }
+  }, 1000);
 }
 
 function setAmbient(on) {
   if (on === ambientOn) return;
   ambientOn = on;
-  if (on) builtInAmbient.last = { summary: 'cycling the colours of the lights nobody uses', raw: '', at: Date.now() };
+  if (on) builtInAmbient.last = { summary: 'slowly moving, changing colour and gobo on the lights nobody uses', raw: '', at: Date.now() };
   console.log(`Ambient switched ${on ? 'on' : 'off'}`);
   if (!on) {
     for (const s of oscSenders.values()) {
@@ -477,8 +499,7 @@ function setAmbient(on) {
   broadcastState(true);
 }
 
-// The built-in cycle: every free light, round the colour wheel, each light a
-// little further round than the one before, so the colours move across the room.
+// The built-in look on every free light (see ambient.js).
 function ambientTick() {
   const owned = Object.entries(rig.owners());
   const had = owned.filter(([, o]) => o.owner === builtInAmbient.id).length;
@@ -487,12 +508,11 @@ function ambientTick() {
     return;
   }
   const busy = new Set(owned.filter(([, o]) => o.owner !== builtInAmbient.id).map(([name]) => name));
-  const turn = (Date.now() % AMBIENT_CYCLE_MS) / AMBIENT_CYCLE_MS;
+  const clock = ambientClock.advance(Date.now(), ambientSettings);
   let has = 0;
   config.lights.forEach((l, i) => {
     if (busy.has(l.name)) return;
-    const hue = ((turn + i / config.lights.length) % 1) * 360;
-    rig.take(builtInAmbient.id, [l.name], { dimmer: AMBIENT_LEVEL * 255, hue, sat: 1 });
+    rig.take(builtInAmbient.id, [l.name], ambientLook(rig.models[l.model], i, config.lights.length, clock, ambientSettings));
     has++;
   });
   if (has !== had) broadcastState();

@@ -140,7 +140,8 @@ The map shows each light in the colour worked out from what is being sent.
 
 On the bridge computer, **Switch ambient on** makes the lights nobody uses do something between performances, instead of staying dark:
 
-- **On its own**, the bridge slowly cycles every free light round the colour wheel at half brightness, each light a little further round than the next, once a minute.
+- **On its own**, the bridge gives every free light a soft, slow look: low light that gently breathes, colours that change slowly, moving heads drifting slowly near where they park, and profiles slowly turning their gobo and changing it now and then, fading out and back in for the change.
+- **Ambient settings** (on the bridge computer, under the ambient button) set this look: brightness, colour strength, colours (the colour wheel, or colour pairs where lights take turns between two colours and the room blends from pair to pair), how fast the colours change, how much and how fast the heads move, and how often the gobos change. Changes show straight away and are saved in `config.json` under `"ambient"`. The colour pairs are listed in `bridge/ambient.js`.
 - **With a music program:** a program that sends `/ambient 1` over OSC (see [OSC](#controlling-the-lights-from-your-own-code-osc)) runs the free lights instead, e.g. `/light/all/colour ...` in time with the music. The built-in cycle stops while it sends.
 - **Performers always win:** ticking a light on the page, or sending OSC to it, takes it from ambient straight away. When they let go, ambient picks it up again.
 - **Switch ambient off** frees ambient's lights; they go dark. The music program's light messages are then ignored until ambient is switched on again.
