@@ -17,6 +17,8 @@ let owners = {};     // light name -> { owner, selected, solo }, from the bridge
 let clientList = {}; // client id -> { label, address, hostName, typedName, last, ... }
 let stateReceivedAt = 0;
 let inControl = true; // false after "Release to console"
+let simulate = false; // true when the bridge is running without Art-Net
+let statusReceived = false; // keep mode-dependent controls hidden until the first status
 
 function toOffsets(byChannel) {
   const out = {};
@@ -269,6 +271,8 @@ function drawPad() {
 
 // ---------- Bridge connection ----------
 function connect() {
+  statusReceived = false;
+  simulate = false;
   ws = new WebSocket(`ws://${location.host}`);
   ws.onopen = () => { connected = true; lastSent = {}; wsOpenedAt ??= performance.now(); updateStatus(); };
   ws.onclose = () => { connected = false; updateStatus(); setTimeout(connect, 1500); };
@@ -295,7 +299,7 @@ function connect() {
     if (m.type === 'map') mapFromBridge(m.map, m.id);
     if (m.type === 'output') { outputFromBridge(m); updatePeek(); }
     if (m.type === 'error') mapNote(m.message);
-    if (m.type === 'status') { inControl = m.inControl; updateStatus(m); }
+    if (m.type === 'status') { statusReceived = true; simulate = m.simulate === true; inControl = m.inControl; updateStatus(m); }
   };
 }
 function send(msg) { if (connected && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
@@ -471,7 +475,11 @@ function updateStatus(s) {
   const conn = el('conn'), out = el('out'), btn = el('toggle-send');
   conn.className = connected ? 'ok' : 'bad';
   conn.textContent = connected ? 'Bridge connected' : 'Bridge not running. Start it with: node bridge.js';
-  if (connected && inControl && s) {
+  el('simulator').hidden = !connected || !statusReceived || !simulate;
+  if (connected && simulate && s) {
+    out.className = 'live';
+    out.textContent = 'The map shows the DMX values the bridge would send, not how real fixtures will respond.';
+  } else if (connected && inControl && s) {
     out.className = 'live';
     const unis = (s.universes || []).map((x) => `${x.console} (Art-Net ${x.artnet})`).join(', ');
     out.textContent = `Controlling the lights through the console at ${s.consoleIp}. Universes ${unis}. ${s.packetsSent} packets`;
@@ -482,9 +490,9 @@ function updateStatus(s) {
   if (s && s.lastError) out.textContent += `  Error: ${s.lastError}`;
   if (s && s.osc) showOscAddress(s.osc);
   if (s && s.ambient) showAmbient(s.ambient);
-  btn.hidden = !canEdit;
+  btn.hidden = !connected || !canEdit || !statusReceived || simulate;
   btn.textContent = inControl ? 'Release to console' : 'Take back from console';
-  btn.classList.toggle('live', inControl);
+  btn.classList.toggle('live', inControl && !simulate);
   if (FIXTURES.length) updateSoloId();
 }
 

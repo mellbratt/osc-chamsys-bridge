@@ -73,13 +73,13 @@ The goal is a general bridge from **OSC to Art-Net**, used by **several clients 
 | Multiple clients | A light belongs to whoever takes it first, for pages and OSC senders alike (see [Several people at once](#several-people-at-once)) | Same |
 | Network | The bridge listens on all interfaces; the page shows the address and port for OSC | Same |
 | Aiming at the floor | Students do the maths themselves from `/info` (positions on the map only) | Calibration data (height, facing, offsets) in `/info` too (#15) |
-| Practising away from the venue | Needs the real bridge | An offline simulator with a message log (#18) |
+| Practising away from the venue | Simulator mode runs the same bridge without Art-Net | A message log and room export (#18) |
 | OSC on the console | Not tested | Tested with students' tools |
 
 ## Requirements
 
 - Node.js (tested with v22).
-- A ChamSys QuickQ (developed for a QuickQ 30) on the same wired network as the computer.
+- A ChamSys QuickQ (developed for a QuickQ 30) on the same wired network as the computer. No console is needed in simulator mode.
 
 ## Setup
 
@@ -97,6 +97,21 @@ Then open http://localhost:8080.
 - **Broadcast:** if the console's IP is unknown, set `console.ip` to the subnet's broadcast address, e.g. `10.255.255.255`.
 - **OSC:** students' code sends to this computer on UDP port 8000 (see [OSC](#controlling-the-lights-from-your-own-code-osc)). On macOS, allow incoming connections for `node` if the firewall asks.
 - **Offline use:** everything the page needs, including p5.js, is in the repo (`sketch/vendor/`), so it works on a network without internet access. Only `npm install` needs internet, once.
+
+### Offline simulator
+
+Students can practise with the same OSC addresses, webpage, ownership rules and DMX calculations without a console. From `bridge/`, run:
+
+```bash
+node bridge.js --simulate                    # uses config.json in the repo root
+node bridge.js --simulate path/to/room.json  # uses another room config
+```
+
+Then open http://localhost:8080. The page shows a **Simulator** banner and no **Release to console** button. Send OSC to `127.0.0.1`, UDP port 8000 by default, when the code runs on the same computer; other devices can use the bridge computer's network address as usual. The config still uses the normal format, including the console keys, but no console connection is made and no Art-Net is sent.
+
+The simulator shows the values the bridge would send, not what physical lights will do. Real fixtures can respond differently and moving heads take time to move. Room export and the teaching message log from #18 are not included yet.
+
+Run the bridge integration tests with `npm test` from `bridge/`.
 
 ## Console and network setup
 
