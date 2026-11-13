@@ -501,7 +501,74 @@ function showAmbient(a) {
     ? 'Ambient is off: lights nobody uses are dark.'
     : a.by
       ? `Ambient is on: ${a.by} (OSC) runs the lights nobody uses. Tick a light to take it over.`
-      : 'Ambient is on: lights nobody uses slowly cycle through the colours. Tick a light to take it over.';
+      : 'Ambient is on: lights nobody uses slowly move and change colour and gobo. Tick a light to take it over.';
+  el('ambient-settings').hidden = !canEdit;
+  if (canEdit && a.settings) showAmbientSettings(a.settings, a.pairs || []);
+}
+
+// The built-in ambient look's settings, on the bridge computer only.
+// Units match bridge/ambient.js.
+const AMBIENT_SLIDERS = [
+  ['Brightness', 'brightness', 0, 100, 1, (v) => `${v}%`],
+  ['Colour strength', 'colour', 0, 100, 1, (v) => `${v}%`],
+  ['Colour change', 'colourMinutes', 0.5, 10, 0.5, (v) => `${v} min`],
+  ['Movement', 'movement', 0, 100, 1, (v) => (v ? `${v}%` : 'still')],
+  ['Movement speed', 'moveSeconds', 20, 300, 5, (v) => `${v} s`],
+  ['Gobo change', 'goboSeconds', 10, 300, 5, (v) => `${v} s`],
+];
+const AMBIENT_HINTS = {
+  colourMinutes: 'Once round the colour wheel, or through all the pairs.',
+  moveSeconds: 'One slow sweep. Longer is slower.',
+  goboSeconds: 'How long each profile keeps its gobo.',
+};
+let ambientInputs = null;
+function showAmbientSettings(settings, pairs) {
+  if (!ambientInputs) ambientInputs = buildAmbientSettings(pairs);
+  for (const [prop, input] of Object.entries(ambientInputs)) {
+    // Don't move a control the user is busy with.
+    if (document.activeElement === input || settings[prop] == null) continue;
+    input.value = settings[prop];
+    input.dispatchEvent(new Event('show'));
+  }
+}
+
+function buildAmbientSettings(pairs) {
+  const box = el('ambient-controls'), inputs = {};
+  const sendIt = (prop, value) => send({ type: 'ambient-settings', settings: { [prop]: value } });
+
+  const lab = document.createElement('label');
+  lab.className = 'slider';
+  lab.innerHTML = '<span>Colours</span><select><option value="wheel">Colour wheel</option><option value="pairs">Colour pairs</option></select>';
+  const select = lab.querySelector('select');
+  const swatches = document.createElement('div');
+  swatches.className = 'pairs';
+  for (const pair of pairs) {
+    const sw = document.createElement('span');
+    sw.className = 'pair';
+    sw.title = pair.join(' + ');
+    sw.style.background = `linear-gradient(90deg, ${pair[0]} 50%, ${pair[1]} 50%)`;
+    swatches.appendChild(sw);
+  }
+  const showSwatches = () => (swatches.hidden = select.value !== 'pairs');
+  select.onchange = () => { showSwatches(); sendIt('colours', select.value); };
+  select.addEventListener('show', showSwatches);
+  box.append(lab, swatches);
+  inputs.colours = select;
+
+  for (const [label, prop, min, max, step, fmt] of AMBIENT_SLIDERS) {
+    const row = document.createElement('label');
+    row.className = 'slider';
+    row.innerHTML = `<span></span><input type="range" min="${min}" max="${max}" step="${step}"><output></output>`;
+    row.firstChild.textContent = label;
+    const input = row.querySelector('input'), out = row.querySelector('output');
+    const show = () => (out.textContent = fmt(+input.value));
+    input.oninput = () => { show(); sendIt(prop, +input.value); };
+    input.addEventListener('show', show);
+    if (AMBIENT_HINTS[prop]) row.title = AMBIENT_HINTS[prop];
+    box.appendChild(row);
+    inputs[prop] = input;
+  }
+  return inputs;
 }
 
 // Where students' own code should send OSC: this computer's addresses.

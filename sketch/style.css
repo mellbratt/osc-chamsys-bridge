@@ -119,3 +119,8 @@ fieldset.type-controls:disabled > :not(.type-hint) { opacity: 0.4; }
 fieldset:disabled .colour canvas { cursor: not-allowed; }
 .colour-side { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
 .swatch { width: 2rem; height: 1.2rem; border-radius: 4px; border: 1px solid var(--dim); }
+
+#ambient-controls .slider { grid-template-columns: 8rem 1fr 4.2rem; }
+#ambient-controls .pairs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.25rem 0 0.5rem 8.5rem; }
+#ambient-controls .pair { width: 2rem; height: 1rem; border-radius: 3px; }
+@media (max-width: 30rem) { #ambient-controls .pairs { margin-left: 0; } }
