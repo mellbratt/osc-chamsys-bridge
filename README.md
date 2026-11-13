@@ -84,7 +84,7 @@ The goal is a general bridge from **OSC to Art-Net**, used by **several clients 
 ## Setup
 
 ```bash
-cp config.example.json config.json   # then edit config.json for your room
+cp -n config.example.json config.json   # only if you have no config.json yet; then edit it for your room
 cd bridge
 npm install
 node bridge.js
@@ -92,7 +92,7 @@ node bridge.js
 
 Then open http://localhost:8080.
 
-- **Config file:** the bridge reads `config.json` in the repo root. To use another file: `node bridge.js path/to/room.json`. `config.json` is not checked in, so each room keeps its own. See [Room configuration](#room-configuration).
+- **Config file:** the bridge reads `config.json` in the repo root. If you were given a `config.json` for your room (e.g. in a copy of this folder), skip the `cp` line: it is only for starting a new room. `-n` stops it overwriting a `config.json` that is already there. To use another file: `node bridge.js path/to/room.json`. `config.json` is not checked in, so each room keeps its own. See [Room configuration](#room-configuration).
 - **Universe mapping:** `console.artnetUniverseForUniverse1` is the Art-Net universe that console universe 1 maps to, usually `0`. Console universe 2 is then sent as the next Art-Net universe.
 - **Broadcast:** if the console's IP is unknown, set `console.ip` to the subnet's broadcast address, e.g. `10.255.255.255`.
 - **OSC:** students' code sends to this computer on UDP port 8000 (see [OSC](#controlling-the-lights-from-your-own-code-osc)). On macOS, allow incoming connections for `node` if the firewall asks.
@@ -371,6 +371,7 @@ When the map is saved, the bridge rewrites the config file. It keeps everything 
 ## Troubleshooting
 
 - **`Cannot find module 'ws'`:** run `npm install` in `bridge/`.
+- **`window is not defined` in `colour.js`:** a `package.json` with `"type": "module"` in a folder above this one makes Node read the files wrongly. The `package.json` in the repo root prevents this; make sure it was copied along.
 - **`OSC: can't listen on UDP port 8000`:** another program uses the port. Set `osc.port` in the config to another port, and tell students.
 - **OSC messages do nothing:** check that students send to the bridge computer (not the console) and to the port shown on the page, and look at the sender's line under Connected devices. Listen for `/warn` replies on port 9000. A firewall on the bridge computer may block incoming UDP.
 - **`No config file at …`:** copy `config.example.json` to `config.json` in the repo root.
