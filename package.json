@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "commonjs",
+  "description": "Run npm install and node bridge.js in bridge/. This file only tells Node that the files here are CommonJS, so a package.json with \"type\": \"module\" in a folder above this one can't break sketch/colour.js."
+}
